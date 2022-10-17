@@ -1,11 +1,12 @@
-use std::net::TcpStream;
+use std::{net::TcpStream, collections::HashSet};
 
 use bevy::prelude::*;
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use tungstenite::{connect, stream::MaybeTlsStream, Message, WebSocket};
 use url::Url;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct LoginResponse {
     token: String,
 }
@@ -14,6 +15,11 @@ struct LoginResponse {
 struct InitialState {
     token: String,
     stateId: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Token {
+    id: String,
 }
 
 fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
@@ -29,6 +35,7 @@ fn setup_websocket(mut commands: Commands) {
     let room_id = "2g80ygbukgn65";
 
     let login_result = login(app_id);
+    let login_response = login_result.expect("Logging in should succeed");
 
     let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
 
@@ -43,7 +50,35 @@ fn setup_websocket(mut commands: Commands) {
         println!("* {}", header);
     }
 
-    let login_response = login_result.expect("Logging in should succeed");
+    match decode_header(&login_response.token) {
+        Ok(ok) => {
+            dbg!("{}", ok);
+        }
+        Err(e) => {
+            dbg!("{}", e);
+        }
+    }
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.insecure_disable_signature_validation();
+    validation.validate_exp = false;
+    validation.required_spec_claims = HashSet::new();
+
+    match decode::<Token>(
+        &login_response.token,
+        &DecodingKey::from_base64_secret("".as_ref()).expect("asdf"),
+        &validation,
+    ) {
+        Ok(ok) => {
+            dbg!("{}", ok);
+        }
+        Err(e) => {
+            dbg!("{}", e);
+        }
+    }
+
+    dbg!("{}", login_response.to_owned());
+
     let initial_state = InitialState {
         token: login_response.token,
         stateId: room_id.to_owned(),

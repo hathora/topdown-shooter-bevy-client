@@ -1,7 +1,7 @@
 use std::{collections::HashSet, net::TcpStream};
 
-use bevy::prelude::*;
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
+use bevy::{prelude::*, render::camera};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use tungstenite::{connect, stream::MaybeTlsStream, Message, WebSocket};
 use url::Url;
@@ -45,9 +45,12 @@ fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
     Ok(resp)
 }
 
+#[derive(Component, Eq, PartialEq, Hash, Clone, Debug)]
 struct UserId(String);
 
 fn setup_websocket(mut commands: Commands) {
+    commands.spawn_bundle(Camera2dBundle::default());
+
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
     // TODO: room should be dynamic
     let room_id = "2g80ygbukgn65";
@@ -124,22 +127,83 @@ struct UpdateMessage {
     state: GameState,
 }
 
-fn update_state(mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>) {
+fn update_state(
+    mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
+    client_user_id: Res<UserId>,
+    mut camera_query: Query<(&Camera, &mut Transform), Without<UserId>>,
+    mut query: Query<(Entity, &UserId, &mut Transform), Without<Camera>>,
+    mut commands: Commands,
+) {
     let msg = socket.read_message().expect("Error reading message");
+
+    // dbg!(client_user_id);
+
+    // TODO: update camera to point at client_user_id
 
     match msg {
         Message::Text(_) => todo!(),
         Message::Binary(data) => {
-            dbg!(String::from_utf8(data.clone()));
-
-            if (!data.is_empty()) {
+            if !data.is_empty() {
                 let update: UpdateMessage =
                     serde_json::from_slice(&data).expect("Deserialize should work");
 
-                dbg!(update);
+                let mut spawned: HashSet<String> = HashSet::new();
+
+                for (entity, user_id, mut player_transform) in &mut query {
+                    if &user_id.0 == &client_user_id.0 {
+                        for (_camera, mut camera_transform) in &mut camera_query {
+                            *camera_transform = Transform {
+                                translation: Vec3::new(
+                                    player_transform.translation.x,
+                                    player_transform.translation.y,
+                                    camera_transform.translation.z,
+                                ),
+                                ..*camera_transform
+                            };
+                        }
+                    }
+
+                    let mut found = false;
+                    spawned.insert(user_id.0.clone());
+                    for player in update.state.players.iter() {
+                        if player.id == user_id.0 {
+                            // dbg!("Updating {}", &player);
+                            found = true;
+                            player_transform.translation.x = player.position.x;
+                            player_transform.translation.y = player.position.y;
+                        }
+                    }
+                    if !found {
+                        dbg!("Despawning {}", user_id);
+                        commands.entity(entity).despawn();
+                    }
+                }
+
+                for player in update.state.players.iter() {
+                    if !spawned.contains(&player.id) {
+                        dbg!("Spawning {}", &player.id);
+                        commands
+                            .spawn()
+                            .insert(UserId(player.id.clone()))
+                            .insert_bundle(SpriteBundle {
+                                // TODO: update angle
+                                transform: Transform {
+                                    translation: Vec3::new(
+                                        player.position.x,
+                                        player.position.y,
+                                        0.,
+                                    ),
+                                    ..default()
+                                },
+                                ..default()
+                            });
+                    }
+                }
             }
         }
-        Message::Ping(_) => todo!(),
+        Message::Ping(_) => {
+            dbg!("Got ping");
+        }
         Message::Pong(_) => todo!(),
         Message::Close(_) => todo!(),
         Message::Frame(_) => todo!(),

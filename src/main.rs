@@ -91,7 +91,57 @@ fn main() {
         .run();
 }
 
+#[derive(Deserialize, Debug)]
+struct Player {
+    id: String,
+    position: Position,
+    aimAngle: f32,
+}
+
+#[derive(Deserialize, Debug)]
+struct Position {
+    x: f32,
+    y: f32,
+}
+
+#[derive(Deserialize, Debug)]
+struct Bullet {
+    id: i32,
+    position: Position,
+}
+
+#[derive(Deserialize, Debug)]
+struct GameState {
+    players: Vec<Player>,
+    bullets: Vec<Bullet>,
+}
+
+#[derive(Deserialize, Debug)]
+struct UpdateMessage {
+    #[serde(rename = "type")]
+    serialized_type: u64,
+    ts: u64,
+    state: GameState,
+}
+
 fn update_state(mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>) {
     let msg = socket.read_message().expect("Error reading message");
-    println!("Receved: {}", msg);
+
+    match msg {
+        Message::Text(_) => todo!(),
+        Message::Binary(data) => {
+            dbg!(String::from_utf8(data.clone()));
+
+            if (!data.is_empty()) {
+                let update: UpdateMessage =
+                    serde_json::from_slice(&data).expect("Deserialize should work");
+
+                dbg!(update);
+            }
+        }
+        Message::Ping(_) => todo!(),
+        Message::Pong(_) => todo!(),
+        Message::Close(_) => todo!(),
+        Message::Frame(_) => todo!(),
+    }
 }

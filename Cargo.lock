@@ -3236,6 +3236,7 @@ name = "topdown-shooter-bevy-client"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "console_error_panic_hook",
  "futures-lite",
  "jsonwebtoken",
  "reqwest",
@@ -3243,6 +3244,7 @@ dependencies = [
  "serde_json",
  "url",
  "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

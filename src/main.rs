@@ -1,9 +1,10 @@
 use std::{collections::HashSet, net::TcpStream};
 
 use bevy::{prelude::*, render::camera};
+use futures_lite::future;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, TokenData, Validation};
 use serde::{Deserialize, Serialize};
-use tungstenite::{connect, stream::MaybeTlsStream, Message, WebSocket};
+// use tungstenite::{connect, stream::MaybeTlsStream, Message, WebSocket};
 use url::Url;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -40,8 +41,10 @@ fn decode_user_id_without_validating_jwt(
 
 fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
     let login_url = format!("https://coordinator.hathora.dev/{app_id}/login/anonymous");
-    let client = reqwest::blocking::Client::new();
-    let resp: LoginResponse = client.post(login_url).send()?.json()?;
+    let client = reqwest::Client::new();
+
+    let resp: LoginResponse =
+        future::block_on(future::block_on(client.post(login_url).send())?.json())?;
     Ok(resp)
 }
 
@@ -65,32 +68,32 @@ fn setup_websocket(mut commands: Commands) {
 
     let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
 
-    let (mut socket, _response) =
-        connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect");
+    // let (mut socket, _response) =
+    //     connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect");
 
     let initial_state = InitialState {
         token: login_response.token,
         stateId: room_id.to_owned(),
     };
     let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
-    match socket.write_message(Message::binary(message)) {
-        Ok(_) => {
-            dbg!("Successfully connected to websocket.");
-        }
-        Err(e) => {
-            dbg!("Failed to connect to websocket. Error was {}", e);
-        }
-    }
+    // match socket.write_message(Message::binary(message)) {
+    //     Ok(_) => {
+    //         dbg!("Successfully connected to websocket.");
+    //     }
+    //     Err(e) => {
+    //         dbg!("Failed to connect to websocket. Error was {}", e);
+    //     }
+    // }
 
-    commands.insert_resource(socket);
+    // commands.insert_resource(socket);
 }
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup_websocket)
-        .add_system(bevy::window::close_on_esc)
-        .add_system(update_state)
+        // .add_system(bevy::window::close_on_esc)
+        // .add_system(update_state)
         .run();
 }
 
@@ -128,84 +131,84 @@ struct UpdateMessage {
 }
 
 fn update_state(
-    mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
+    // mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
     client_user_id: Res<UserId>,
     mut camera_query: Query<(&Camera, &mut Transform), Without<UserId>>,
     mut query: Query<(Entity, &UserId, &mut Transform), Without<Camera>>,
     mut commands: Commands,
 ) {
-    let msg = socket.read_message().expect("Error reading message");
+    // let msg = socket.read_message().expect("Error reading message");
 
     // dbg!(client_user_id);
 
     // TODO: update camera to point at client_user_id
 
-    match msg {
-        Message::Text(_) => todo!(),
-        Message::Binary(data) => {
-            if !data.is_empty() {
-                let update: UpdateMessage =
-                    serde_json::from_slice(&data).expect("Deserialize should work");
+    // match msg {
+    //     Message::Text(_) => todo!(),
+    //     Message::Binary(data) => {
+    //         if !data.is_empty() {
+    //             let update: UpdateMessage =
+    //                 serde_json::from_slice(&data).expect("Deserialize should work");
 
-                let mut spawned: HashSet<String> = HashSet::new();
+    //             let mut spawned: HashSet<String> = HashSet::new();
 
-                for (entity, user_id, mut player_transform) in &mut query {
-                    if &user_id.0 == &client_user_id.0 {
-                        for (_camera, mut camera_transform) in &mut camera_query {
-                            *camera_transform = Transform {
-                                translation: Vec3::new(
-                                    player_transform.translation.x,
-                                    player_transform.translation.y,
-                                    camera_transform.translation.z,
-                                ),
-                                ..*camera_transform
-                            };
-                        }
-                    }
+    //             for (entity, user_id, mut player_transform) in &mut query {
+    //                 if &user_id.0 == &client_user_id.0 {
+    //                     for (_camera, mut camera_transform) in &mut camera_query {
+    //                         *camera_transform = Transform {
+    //                             translation: Vec3::new(
+    //                                 player_transform.translation.x,
+    //                                 player_transform.translation.y,
+    //                                 camera_transform.translation.z,
+    //                             ),
+    //                             ..*camera_transform
+    //                         };
+    //                     }
+    //                 }
 
-                    let mut found = false;
-                    spawned.insert(user_id.0.clone());
-                    for player in update.state.players.iter() {
-                        if player.id == user_id.0 {
-                            // dbg!("Updating {}", &player);
-                            found = true;
-                            player_transform.translation.x = player.position.x;
-                            player_transform.translation.y = player.position.y;
-                        }
-                    }
-                    if !found {
-                        dbg!("Despawning {}", user_id);
-                        commands.entity(entity).despawn();
-                    }
-                }
+    //                 let mut found = false;
+    //                 spawned.insert(user_id.0.clone());
+    //                 for player in update.state.players.iter() {
+    //                     if player.id == user_id.0 {
+    //                         // dbg!("Updating {}", &player);
+    //                         found = true;
+    //                         player_transform.translation.x = player.position.x;
+    //                         player_transform.translation.y = player.position.y;
+    //                     }
+    //                 }
+    //                 if !found {
+    //                     dbg!("Despawning {}", user_id);
+    //                     commands.entity(entity).despawn();
+    //                 }
+    //             }
 
-                for player in update.state.players.iter() {
-                    if !spawned.contains(&player.id) {
-                        dbg!("Spawning {}", &player.id);
-                        commands
-                            .spawn()
-                            .insert(UserId(player.id.clone()))
-                            .insert_bundle(SpriteBundle {
-                                // TODO: update angle
-                                transform: Transform {
-                                    translation: Vec3::new(
-                                        player.position.x,
-                                        player.position.y,
-                                        0.,
-                                    ),
-                                    ..default()
-                                },
-                                ..default()
-                            });
-                    }
-                }
-            }
-        }
-        Message::Ping(_) => {
-            dbg!("Got ping");
-        }
-        Message::Pong(_) => todo!(),
-        Message::Close(_) => todo!(),
-        Message::Frame(_) => todo!(),
-    }
+    //             for player in update.state.players.iter() {
+    //                 if !spawned.contains(&player.id) {
+    //                     dbg!("Spawning {}", &player.id);
+    //                     commands
+    //                         .spawn()
+    //                         .insert(UserId(player.id.clone()))
+    //                         .insert_bundle(SpriteBundle {
+    //                             // TODO: update angle
+    //                             transform: Transform {
+    //                                 translation: Vec3::new(
+    //                                     player.position.x,
+    //                                     player.position.y,
+    //                                     0.,
+    //                                 ),
+    //                                 ..default()
+    //                             },
+    //                             ..default()
+    //                         });
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     Message::Ping(_) => {
+    //         dbg!("Got ping");
+    //     }
+    //     Message::Pong(_) => todo!(),
+    //     Message::Close(_) => todo!(),
+    //     Message::Frame(_) => todo!(),
+    // }
 }

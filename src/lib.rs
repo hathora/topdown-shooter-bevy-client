@@ -1,4 +1,4 @@
-// use bevy::{prelude::*, render::camera, tasks::AsyncComputeTaskPool};
+use bevy::{prelude::*, render::camera, tasks::AsyncComputeTaskPool};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 // use wascap::{jwt::WascapEntity, prelude::Claims};
@@ -29,15 +29,12 @@ fn decode_user_id_without_validating_jwt(token: &str) -> Result<String, TokenErr
     let segments: Vec<&str> = token.split('.').collect();
     let id = segments[1];
 
-
-    
     match base64::decode_config(segments[1], base64::URL_SAFE_NO_PAD) {
         Ok(data) => {
             let string = String::from_utf8(data).expect("base64 output is valid utf8");
             let token: Token = serde_json::from_str(&string).expect("token JSON is valid");
             Ok(token.id)
-        
-        },
+        }
         Err(_) => Err(TokenError),
     }
 }
@@ -100,7 +97,7 @@ async fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>
 
 #[wasm_bindgen]
 pub async fn run() {
-    // console_error_panic_hook::set_once();
+    console_error_panic_hook::set_once();
 
     let room_id = "2g80ygbukgn65";
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
@@ -112,15 +109,14 @@ pub async fn run() {
         .expect("Decoding JWT should succeed");
 
     web_sys::console::log_1(&"done decoding user_id".into());
-
     web_sys::console::log_1(&user_id.into());
 
-    // App::new()
-    //     .add_plugins(DefaultPlugins)
-    //     .add_startup_system(setup_websocket)
-    //     // .add_system(bevy::window::close_on_esc)
-    //     // .add_system(update_state)
-    //     .run();
+    App::new()
+        .add_plugins(DefaultPlugins)
+        // .add_startup_system(setup_websocket)
+        // .add_system(bevy::window::close_on_esc)
+        // .add_system(update_state)
+        .run();
 }
 
 // #[derive(Deserialize, Debug)]

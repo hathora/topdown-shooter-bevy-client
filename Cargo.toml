@@ -9,7 +9,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-# bevy = "0.8.1"
+bevy = "0.8.1"
 # tungstenite = {version = "0.17.3", features = ["native-tls"]}
 url = "2.3.1"
 reqwest = { version = "0.11", features = ["json"] }
@@ -20,4 +20,4 @@ wasm-bindgen-futures = "0.4.33"
 web-sys = {version = "0.3.60", features = ["console"]}
 wascap = "0.8.0"
 base64 = "0.13.0"
-# console_error_panic_hook = "0.1.7"
+console_error_panic_hook = "0.1.7"

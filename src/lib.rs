@@ -49,68 +49,72 @@ async fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>
 #[derive(Component, Eq, PartialEq, Hash, Clone, Debug)]
 struct UserId(String);
 
-fn setup_websocket(mut commands: Commands) {
-    web_sys::console::log_1(&"asdf".into());
-    commands.spawn_bundle(Camera2dBundle::default());
+// fn setup_websocket(mut commands: Commands) {
+//     web_sys::console::log_1(&"asdf".into());
+//     commands.spawn_bundle(Camera2dBundle::default());
 
-    // // TODO: room should be dynamic
-    let room_id = "2g80ygbukgn65";
-    let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
+//     // // TODO: room should be dynamic
+//     let room_id = "2g80ygbukgn65";
+//     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
 
-    let thread_pool = AsyncComputeTaskPool::get();
+//     let thread_pool = AsyncComputeTaskPool::get();
 
-    let x = thread_pool.spawn_local(async move {
+//     let x = thread_pool.spawn_local(async move {
+//         web_sys::console::log_1(&"inside task".into());
 
-        web_sys::console::log_1(&"inside task".into());
+//         let login_result = login(app_id).await;
+//         let login_response = login_result.expect("Logging in should succeed");
+//         // web_sys::console::log_1(&login_response.token.into());
 
+//         let user_id = decode_user_id_without_validating_jwt(&login_response.token)
+//             .expect("Decoding JWT should succeed");
 
-        let login_result = login(app_id).await;
-        let login_response = login_result.expect("Logging in should succeed");
-        // web_sys::console::log_1(&login_response.token.into());
+//         // commands.insert_resource(UserId(user_id.claims.id));
 
-        let user_id = decode_user_id_without_validating_jwt(&login_response.token)
-            .expect("Decoding JWT should succeed");
+//         // let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
 
-        // commands.insert_resource(UserId(user_id.claims.id));
+//         // let (mut socket, _response) =
+//         //     connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect");
 
-        // let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
+//         // let initial_state = InitialState {
+//         //     token: login_response.token,
+//         //     stateId: room_id.to_owned(),
+//         // };
+//         // let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
+//         // match socket.write_message(Message::binary(message)) {
+//         //     Ok(_) => {
+//         //         dbg!("Successfully connected to websocket.");
+//         //     }
+//         //     Err(e) => {
+//         //         dbg!("Failed to connect to websocket. Error was {}", e);
+//         //     }
+//         // }
 
-        // let (mut socket, _response) =
-        //     connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect");
-
-        // let initial_state = InitialState {
-        //     token: login_response.token,
-        //     stateId: room_id.to_owned(),
-        // };
-        // let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
-        // match socket.write_message(Message::binary(message)) {
-        //     Ok(_) => {
-        //         dbg!("Successfully connected to websocket.");
-        //     }
-        //     Err(e) => {
-        //         dbg!("Failed to connect to websocket. Error was {}", e);
-        //     }
-        // }
-
-        // commands.insert_resource(socket);
-    });
-
-
-    
-}
+//         // commands.insert_resource(socket);
+//     });
+// }
 
 #[wasm_bindgen]
-pub fn run() {
+pub async fn run() {
     console_error_panic_hook::set_once();
 
-    // web_sys::console::log_1(&"aasdfasdfasdfsdf".into());
+    let room_id = "2g80ygbukgn65";
+    let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
+    let login_result = login(app_id).await;
+    let login_response = login_result.expect("Logging in should succeed");
+    // web_sys::console::log_1(&login_response.token.into());
 
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_startup_system(setup_websocket)
-        // .add_system(bevy::window::close_on_esc)
-        // .add_system(update_state)
-        .run();
+    let user_id = decode_user_id_without_validating_jwt(&login_response.token)
+        .expect("Decoding JWT should succeed");
+
+    web_sys::console::log_1(&user_id.claims.id.into());
+
+    // App::new()
+    //     .add_plugins(DefaultPlugins)
+    //     .add_startup_system(setup_websocket)
+    //     // .add_system(bevy::window::close_on_esc)
+    //     // .add_system(update_state)
+    //     .run();
 }
 
 #[derive(Deserialize, Debug)]

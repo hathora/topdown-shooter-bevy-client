@@ -1,13 +1,16 @@
 use bevy::prelude::*;
 
-use futures::stream::StreamExt;
-use futures::SinkExt;
+use bevy::tasks::AsyncComputeTaskPool;
+use bevy::ui::update;
+use futures::{stream::StreamExt, Future};
+use futures::{FutureExt, SinkExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::iter::Iterator;
+use std::pin::Pin;
 use std::task::Context;
 use wasm_bindgen::prelude::*;
-use ws_stream_wasm::{WsMessage, WsMeta, WsStream};
+use ws_stream_wasm::{WsErr, WsMessage, WsMeta, WsStream};
 
 #[derive(Deserialize, Debug, Clone)]
 struct LoginResponse {
@@ -80,9 +83,7 @@ pub async fn run() {
         stateId: room_id.to_owned(),
     };
     let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
-
     let message = WsMessage::Binary(message);
-
     let send_result = ws_stream.send(message).await;
 
     match send_result {
@@ -95,7 +96,8 @@ pub async fn run() {
         .insert_resource(ws_stream)
         .insert_resource(UserId(user_id))
         .add_startup_system(setup)
-        .add_system(update_state)
+        .add_system(read_from_server)
+        .add_system(write_inputs)
         .run();
 }
 
@@ -168,7 +170,7 @@ fn poll_for_update(socket: &mut WsStream) -> Option<UpdateMessage> {
     }
 }
 
-fn update_state(
+fn read_from_server(
     mut socket: ResMut<WsStream>,
     client_user_id: Res<UserId>,
     mut camera_query: Query<(&Camera, &mut Transform), Without<UserId>>,
@@ -196,7 +198,7 @@ fn update_state(
             spawned.insert(user_id.0.clone());
             for player in update.state.players.iter() {
                 if player.id == user_id.0 {
-                    info!("Updating {:?}", player.id);
+                    debug!("Updating {:?}", player.id);
                     found = true;
                     player_transform.translation.x = player.position.x;
                     player_transform.translation.y = player.position.y;
@@ -224,5 +226,67 @@ fn update_state(
                     });
             }
         }
+    }
+}
+
+#[derive(Serialize)]
+struct MoveInput {
+    #[serde(rename = "type")]
+    serialized_type: u64,
+    direction: u64,
+}
+
+fn write_inputs(
+    input: Res<Input<KeyCode>>,
+    mut socket: ResMut<WsStream>,
+    // input_future: ResMut<>>,
+) {
+    let waker = noop_waker::noop_waker();
+    let mut ctx = Context::from_waker(&waker);
+    match socket.poll_flush_unpin(&mut ctx) {
+        std::task::Poll::Ready(_) => {
+            debug!("Write buffer is empty");
+        }
+        std::task::Poll::Pending => {
+            debug!("Write buffer is still writing");
+            return;
+        }
+    }
+
+    debug!("Processing keyboard input");
+
+    let mut update_necessary = false;
+    let mut direction = 0;
+
+    if input.any_just_released([KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D]) {
+        update_necessary = true;
+    }
+
+    if input.just_pressed(KeyCode::W) {
+        update_necessary = true;
+        direction = 1
+    } else if input.just_pressed(KeyCode::S) {
+        update_necessary = true;
+        direction = 2;
+    } else if input.just_pressed(KeyCode::A) {
+        update_necessary = true;
+        direction = 3;
+    } else if input.just_pressed(KeyCode::D) {
+        update_necessary = true;
+        direction = 4;
+    }
+
+    if update_necessary {
+        debug!("Writing input");
+        let input = MoveInput {
+            serialized_type: 0,
+            direction,
+        };
+
+        let message = serde_json::to_vec(&input).expect("Serialization should work");
+        let message = WsMessage::Binary(message);
+        let mut task = socket.send(message);
+
+        debug!("{:?}", task.poll_unpin(&mut ctx));
     }
 }

@@ -110,9 +110,7 @@ fn setup_websocket(mut commands: Commands) {
 
 #[wasm_bindgen]
 pub async fn run() {
-    console_error_panic_hook::set_once();
-    wasm_logger::init(wasm_logger::Config::default());
-
+    dbg!("in the browser");
     let room_id = "374jv73032a1i";
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
     let login_result = login(app_id).await;
@@ -206,12 +204,10 @@ pub async fn run() {
     // let x = evts.next().await.expect("First message");
 
     App::new()
-        .add_plugins_with(DefaultPlugins, |group| {
-            group.disable::<bevy::log::LogPlugin>()
-        })
+        .add_plugins(DefaultPlugins)
         .insert_resource(ws_stream)
         .insert_resource(UserId(user_id))
-        // .add_startup_system(setup_websocket)
+        .add_startup_system(setup_websocket)
         .add_system(update_state)
         .run();
 }

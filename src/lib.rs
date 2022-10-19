@@ -1,3 +1,8 @@
+use bevy::app::ScheduleRunnerPlugin;
+use bevy::core::CorePlugin;
+use bevy::input::InputPlugin;
+use bevy::time::TimePlugin;
+use bevy::window::WindowPlugin;
 use bevy::{prelude::*, render::camera, tasks::AsyncComputeTaskPool};
 use futures::future::Ready;
 use futures::{stream::StreamExt, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
@@ -201,18 +206,14 @@ pub async fn run() {
     // let x = evts.next().await.expect("First message");
 
     App::new()
-        // .add_plugins(DefaultPlugins)
-        // .insert_resource(ws_stream)
-        // .insert_resource(UserId(user_id))
+        .add_plugins_with(DefaultPlugins, |group| {
+            group.disable::<bevy::log::LogPlugin>()
+        })
+        .insert_resource(ws_stream)
+        .insert_resource(UserId(user_id))
         // .add_startup_system(setup_websocket)
-        // .add_system(bevy::window::close_on_esc)
-        // .add_system(update_state)
-        .add_system(hello_world)
+        .add_system(update_state)
         .run();
-}
-
-fn hello_world() {
-    log::info!("Hello world");
 }
 
 #[derive(Deserialize, Debug)]
@@ -248,6 +249,52 @@ struct UpdateMessage {
     state: GameState,
 }
 
+fn poll_for_update(socket: &mut WsStream) -> Option<UpdateMessage> {
+    let waker = noop_waker::noop_waker();
+    let mut ctx = Context::from_waker(&waker);
+
+    match socket.poll_next_unpin(&mut ctx) {
+        std::task::Poll::Ready(message) => {
+            log::info!("Message is ready");
+            match message {
+                Some(message) => match message {
+                    WsMessage::Text(t) => {
+                        log::info!("Got text: {:#?}", t);
+                        if !t.is_empty() {
+                            return Some(
+                                serde_json::from_str::<UpdateMessage>(&t)
+                                    .expect("Successfully deserialized update"),
+                            );
+                        }
+                        None
+                    }
+                    WsMessage::Binary(b) => {
+                        log::info!(
+                            "Got binary: {:#?}",
+                            String::from_utf8(b.clone()).expect("asdf")
+                        );
+                        if !b.is_empty() {
+                            return Some(
+                                serde_json::from_slice::<UpdateMessage>(&b)
+                                    .expect("Successfully deserialized update"),
+                            );
+                        }
+                        return None;
+                    }
+                },
+                None => {
+                    log::info!("Message was None");
+                    return None;
+                }
+            }
+        }
+        std::task::Poll::Pending => {
+            log::info!("Still pending");
+            return None;
+        }
+    }
+}
+
 fn update_state(
     mut socket: ResMut<WsStream>,
     client_user_id: Res<UserId>,
@@ -255,162 +302,54 @@ fn update_state(
     mut query: Query<(Entity, &UserId, &mut Transform), Without<Camera>>,
     mut commands: Commands,
 ) {
-    log::info!("Inside system");
+    if let Some(update) = poll_for_update(&mut socket) {
+        let mut spawned: HashSet<String> = HashSet::new();
 
-    // let waker = noop_waker::noop_waker();
-    // let mut ctx = Context::from_waker(&waker);
+        for (entity, user_id, mut player_transform) in &mut query {
+            if &user_id.0 == &client_user_id.0 {
+                for (_camera, mut camera_transform) in &mut camera_query {
+                    *camera_transform = Transform {
+                        translation: Vec3::new(
+                            player_transform.translation.x,
+                            player_transform.translation.y,
+                            camera_transform.translation.z,
+                        ),
+                        ..*camera_transform
+                    };
+                }
+            }
 
-    // let mut message = socket.next();
-    // use futures_lite::future::FutureExt;
-    // match message.poll(&mut ctx) {
-    //     std::task::Poll::Ready(_) => {
-    //         log::info!("ready");
-    //     }
-    //     std::task::Poll::Pending => {
-    //         log::info!("pending");
-    //     }
-    // }
+            let mut found = false;
+            spawned.insert(user_id.0.clone());
+            for player in update.state.players.iter() {
+                if player.id == user_id.0 {
+                    log::info!("Updating {:?}", player.id);
+                    found = true;
+                    player_transform.translation.x = player.position.x;
+                    player_transform.translation.y = player.position.y;
+                }
+            }
+            if !found {
+                log::info!("Despawning {:?}", entity);
+                commands.entity(entity).despawn();
+            }
+        }
 
-    // match socket.poll_next_unpin(&mut ctx) {
-    //     std::task::Poll::Ready(message) => {
-    //         log::info!("Message is ready");
-
-    //         match message {
-    //             Some(message) => match message {
-    //                 WsMessage::Text(t) => {
-    //                     log::info!("Got text: {:#?}", t);
-    //                     if !t.is_empty() {
-    //                         let x: UpdateMessage =
-    //                             serde_json::from_str(&t).expect("Successfully deserialized update");
-    //                     }
-    //                 }
-    //                 WsMessage::Binary(b) => {
-    //                     log::info!(
-    //                         "Got binary: {:#?}",
-    //                         String::from_utf8(b.clone()).expect("asdf")
-    //                     );
-    //                     if !b.is_empty() {
-    //                         let x: UpdateMessage = serde_json::from_slice(&b)
-    //                             .expect("Successfully deserialized update");
-    //                     }
-    //                 }
-    //             },
-    //             None => {
-    //                 log::info!("Message was None");
-    //             }
-    //         }
-    //     }
-    //     std::task::Poll::Pending => {
-    //         log::info!("Still pending");
-    //     }
-    // }
-    // futures::ready!(message);
-
-    // match z.await {
-    //     Some(_) => todo!(),
-    //     None => todo!(),
-    // }
-
-    //
-
-    // let message = futures::executor::block_on(socket.next());
-
-    // if let Some(message) = message {
-    //     match message {
-    //         WsMessage::Text(t) => {
-    //             log::info!("Got text: {:#?}", t);
-    //             if !t.is_empty() {
-    //                 let x: UpdateMessage =
-    //                     serde_json::from_str(&t).expect("Successfully deserialized update");
-    //             }
-    //         }
-    //         WsMessage::Binary(b) => {
-    //             log::info!(
-    //                 "Got binary: {:#?}",
-    //                 String::from_utf8(b.clone()).expect("asdf")
-    //             );
-    //             if !b.is_empty() {
-    //                 let x: UpdateMessage =
-    //                     serde_json::from_slice(&b).expect("Successfully deserialized update");
-    //             }
-    //         }
-    //     }
-    // } else {
-    //     log::info!("Got a None message.");
-    // }
-
-    //     // let msg = socket.read_message().expect("Error reading message");
-
-    //     // dbg!(client_user_id);
-
-    //     // TODO: update camera to point at client_user_id
-
-    //     // match msg {
-    //     //     Message::Text(_) => todo!(),
-    //     //     Message::Binary(data) => {
-    //     //         if !data.is_empty() {
-    //     //             let update: UpdateMessage =
-    //     //                 serde_json::from_slice(&data).expect("Deserialize should work");
-
-    //     //             let mut spawned: HashSet<String> = HashSet::new();
-
-    //     //             for (entity, user_id, mut player_transform) in &mut query {
-    //     //                 if &user_id.0 == &client_user_id.0 {
-    //     //                     for (_camera, mut camera_transform) in &mut camera_query {
-    //     //                         *camera_transform = Transform {
-    //     //                             translation: Vec3::new(
-    //     //                                 player_transform.translation.x,
-    //     //                                 player_transform.translation.y,
-    //     //                                 camera_transform.translation.z,
-    //     //                             ),
-    //     //                             ..*camera_transform
-    //     //                         };
-    //     //                     }
-    //     //                 }
-
-    //     //                 let mut found = false;
-    //     //                 spawned.insert(user_id.0.clone());
-    //     //                 for player in update.state.players.iter() {
-    //     //                     if player.id == user_id.0 {
-    //     //                         // dbg!("Updating {}", &player);
-    //     //                         found = true;
-    //     //                         player_transform.translation.x = player.position.x;
-    //     //                         player_transform.translation.y = player.position.y;
-    //     //                     }
-    //     //                 }
-    //     //                 if !found {
-    //     //                     dbg!("Despawning {}", user_id);
-    //     //                     commands.entity(entity).despawn();
-    //     //                 }
-    //     //             }
-
-    //     //             for player in update.state.players.iter() {
-    //     //                 if !spawned.contains(&player.id) {
-    //     //                     dbg!("Spawning {}", &player.id);
-    //     //                     commands
-    //     //                         .spawn()
-    //     //                         .insert(UserId(player.id.clone()))
-    //     //                         .insert_bundle(SpriteBundle {
-    //     //                             // TODO: update angle
-    //     //                             transform: Transform {
-    //     //                                 translation: Vec3::new(
-    //     //                                     player.position.x,
-    //     //                                     player.position.y,
-    //     //                                     0.,
-    //     //                                 ),
-    //     //                                 ..default()
-    //     //                             },
-    //     //                             ..default()
-    //     //                         });
-    //     //                 }
-    //     //             }
-    //     //         }
-    //     //     }
-    //     //     Message::Ping(_) => {
-    //     //         dbg!("Got ping");
-    //     //     }
-    //     //     Message::Pong(_) => todo!(),
-    //     //     Message::Close(_) => todo!(),
-    //     //     Message::Frame(_) => todo!(),
-    //     // }
+        for player in update.state.players.iter() {
+            if !spawned.contains(&player.id) {
+                log::info!("Spawning {}", &player.id);
+                commands
+                    .spawn()
+                    .insert(UserId(player.id.clone()))
+                    .insert_bundle(SpriteBundle {
+                        // TODO: update angle
+                        transform: Transform {
+                            translation: Vec3::new(player.position.x, player.position.y, 0.),
+                            ..default()
+                        },
+                        ..default()
+                    });
+            }
+        }
+    }
 }

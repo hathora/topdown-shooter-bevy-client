@@ -1,11 +1,14 @@
+use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 
+use bevy::render::camera::RenderTarget;
 use bevy::tasks::AsyncComputeTaskPool;
 use bevy::ui::update;
 use futures::{stream::StreamExt, Future};
 use futures::{FutureExt, SinkExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::f32::consts::PI;
 use std::iter::Iterator;
 use std::pin::Pin;
 use std::task::Context;
@@ -58,8 +61,13 @@ async fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>
 #[derive(Component, Eq, PartialEq, Hash, Clone, Debug)]
 struct UserId(String);
 
+#[derive(Component)]
+struct MainCamera;
+
 fn setup(mut commands: Commands) {
-    commands.spawn_bundle(Camera2dBundle::default());
+    commands
+        .spawn_bundle(Camera2dBundle::default())
+        .insert(MainCamera);
 }
 
 #[wasm_bindgen]
@@ -95,6 +103,7 @@ pub async fn run() {
         .add_plugins(DefaultPlugins)
         .insert_resource(ws_stream)
         .insert_resource(UserId(user_id))
+        .insert_resource(MouseLocation(Vec2::ZERO))
         .add_startup_system(setup)
         .add_system(read_from_server)
         .add_system(write_inputs)
@@ -181,6 +190,17 @@ fn read_from_server(
         let mut spawned: HashSet<String> = HashSet::new();
 
         for (entity, user_id, mut player_transform) in &mut query {
+            let mut found = false;
+            spawned.insert(user_id.0.clone());
+            for player in update.state.players.iter() {
+                if player.id == user_id.0 {
+                    debug!("Updating {:?}", player.id);
+                    found = true;
+                    player_transform.translation.x = player.position.x;
+                    player_transform.translation.y = player.position.y;
+                }
+            }
+
             if &user_id.0 == &client_user_id.0 {
                 for (_camera, mut camera_transform) in &mut camera_query {
                     *camera_transform = Transform {
@@ -194,16 +214,6 @@ fn read_from_server(
                 }
             }
 
-            let mut found = false;
-            spawned.insert(user_id.0.clone());
-            for player in update.state.players.iter() {
-                if player.id == user_id.0 {
-                    debug!("Updating {:?}", player.id);
-                    found = true;
-                    player_transform.translation.x = player.position.x;
-                    player_transform.translation.y = player.position.y;
-                }
-            }
             if !found {
                 info!("Despawning {:?}", entity);
                 commands.entity(entity).despawn();
@@ -213,8 +223,9 @@ fn read_from_server(
         for player in update.state.players.iter() {
             if !spawned.contains(&player.id) {
                 info!("Spawning {}", &player.id);
-                commands
-                    .spawn()
+                let mut entity = commands.spawn();
+
+                entity
                     .insert(UserId(player.id.clone()))
                     .insert_bundle(SpriteBundle {
                         // TODO: update angle
@@ -224,10 +235,17 @@ fn read_from_server(
                         },
                         ..default()
                     });
+
+                if &player.id == &client_user_id.0 {
+                    entity.insert(CurrentPlayer);
+                }
             }
         }
     }
 }
+
+#[derive(Component)]
+struct CurrentPlayer;
 
 #[derive(Serialize)]
 struct MoveInput {
@@ -236,10 +254,24 @@ struct MoveInput {
     direction: u64,
 }
 
+#[derive(Serialize)]
+struct AngleInput {
+    #[serde(rename = "type")]
+    serialized_type: u64,
+    angle: f32,
+}
+
+struct MouseLocation(Vec2);
+
 fn write_inputs(
     input: Res<Input<KeyCode>>,
     mut socket: ResMut<WsStream>,
-    // input_future: ResMut<>>,
+    mut query: Query<(&CurrentPlayer, &Transform)>,
+    // need to get window dimensions
+    wnds: Res<Windows>,
+    q_camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mut mouse_location: ResMut<MouseLocation>,
+    mut mouse_motion_events: EventReader<MouseMotion>,
 ) {
     let waker = noop_waker::noop_waker();
     let mut ctx = Context::from_waker(&waker);
@@ -255,28 +287,28 @@ fn write_inputs(
 
     debug!("Processing keyboard input");
 
-    let mut update_necessary = false;
+    let mut keyboard_update_necessary = false;
     let mut direction = 0;
 
     if input.any_just_released([KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D]) {
-        update_necessary = true;
+        keyboard_update_necessary = true;
     }
 
     if input.just_pressed(KeyCode::W) {
-        update_necessary = true;
+        keyboard_update_necessary = true;
         direction = 1
     } else if input.just_pressed(KeyCode::S) {
-        update_necessary = true;
+        keyboard_update_necessary = true;
         direction = 2;
     } else if input.just_pressed(KeyCode::A) {
-        update_necessary = true;
+        keyboard_update_necessary = true;
         direction = 3;
     } else if input.just_pressed(KeyCode::D) {
-        update_necessary = true;
+        keyboard_update_necessary = true;
         direction = 4;
     }
 
-    if update_necessary {
+    if keyboard_update_necessary {
         debug!("Writing input");
         let input = MoveInput {
             serialized_type: 0,
@@ -287,6 +319,61 @@ fn write_inputs(
         let message = WsMessage::Binary(message);
         let mut task = socket.send(message);
 
-        debug!("{:?}", task.poll_unpin(&mut ctx));
+        debug!("keyboard task: {:?}", task.poll_unpin(&mut ctx));
+    }
+
+    if !mouse_motion_events.is_empty() {
+        info!("Processing mouse input");
+
+        // get the camera info and transform
+        // assuming there is exactly one main camera entity, so query::single() is OK
+        let (camera, camera_transform) = q_camera.single();
+
+        // get the window that the camera is displaying to (or the primary window)
+        let wnd = if let RenderTarget::Window(id) = camera.target {
+            wnds.get(id).unwrap()
+        } else {
+            wnds.get_primary().unwrap()
+        };
+
+        // check if the cursor is inside the window and get its position
+        if let Some(screen_pos) = wnd.cursor_position() {
+            // get the size of the window
+            let window_size = Vec2::new(wnd.width() as f32, wnd.height() as f32);
+
+            // convert screen position [0..resolution] to ndc [-1..1] (gpu coordinates)
+            let ndc = (screen_pos / window_size) * 2.0 - Vec2::ONE;
+
+            // matrix for undoing the projection and camera transform
+            let ndc_to_world =
+                camera_transform.compute_matrix() * camera.projection_matrix().inverse();
+
+            // use it to convert ndc to world-space coordinates
+            let world_pos = ndc_to_world.project_point3(ndc.extend(-1.0));
+
+            // reduce it to a 2D value
+            let world_pos: Vec2 = world_pos.truncate();
+
+            info!("Mouse coords: {}/{}", world_pos.x, world_pos.y);
+
+            let (_, player_transform) = query.single();
+
+            let angle =
+                (world_pos - player_transform.translation.truncate()).angle_between(Vec2::X);
+            info!("Angle {}", angle);
+
+            let mouse_input = AngleInput {
+                serialized_type: 1,
+                angle,
+            };
+
+            let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
+            let message = WsMessage::Binary(message);
+            let mut task = socket.send(message);
+
+            info!("mouse task: {:?}", task.poll_unpin(&mut ctx));
+
+            *mouse_location = MouseLocation(world_pos);
+        }
     }
 }

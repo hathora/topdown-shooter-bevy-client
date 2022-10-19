@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::iter::Iterator;
+use std::pin::Pin;
+use std::task::Context;
 use url::Url;
 use wasm_bindgen::prelude::*;
 use web_sys::WebSocket;
@@ -200,12 +202,17 @@ pub async fn run() {
 
     App::new()
         // .add_plugins(DefaultPlugins)
-        .insert_resource(ws_stream)
-        .insert_resource(UserId(user_id))
-        .add_startup_system(setup_websocket)
+        // .insert_resource(ws_stream)
+        // .insert_resource(UserId(user_id))
+        // .add_startup_system(setup_websocket)
         // .add_system(bevy::window::close_on_esc)
-        .add_system(update_state)
+        // .add_system(update_state)
+        .add_system(hello_world)
         .run();
+}
+
+fn hello_world() {
+    log::info!("Hello world");
 }
 
 #[derive(Deserialize, Debug)]
@@ -250,12 +257,59 @@ fn update_state(
 ) {
     log::info!("Inside system");
 
-    let thread_pool = AsyncComputeTaskPool::get();
+    // let waker = noop_waker::noop_waker();
+    // let mut ctx = Context::from_waker(&waker);
 
-    let message = socket.next();
+    // let mut message = socket.next();
+    // use futures_lite::future::FutureExt;
+    // match message.poll(&mut ctx) {
+    //     std::task::Poll::Ready(_) => {
+    //         log::info!("ready");
+    //     }
+    //     std::task::Poll::Pending => {
+    //         log::info!("pending");
+    //     }
+    // }
 
-    futures::poll_once
+    // match socket.poll_next_unpin(&mut ctx) {
+    //     std::task::Poll::Ready(message) => {
+    //         log::info!("Message is ready");
 
+    //         match message {
+    //             Some(message) => match message {
+    //                 WsMessage::Text(t) => {
+    //                     log::info!("Got text: {:#?}", t);
+    //                     if !t.is_empty() {
+    //                         let x: UpdateMessage =
+    //                             serde_json::from_str(&t).expect("Successfully deserialized update");
+    //                     }
+    //                 }
+    //                 WsMessage::Binary(b) => {
+    //                     log::info!(
+    //                         "Got binary: {:#?}",
+    //                         String::from_utf8(b.clone()).expect("asdf")
+    //                     );
+    //                     if !b.is_empty() {
+    //                         let x: UpdateMessage = serde_json::from_slice(&b)
+    //                             .expect("Successfully deserialized update");
+    //                     }
+    //                 }
+    //             },
+    //             None => {
+    //                 log::info!("Message was None");
+    //             }
+    //         }
+    //     }
+    //     std::task::Poll::Pending => {
+    //         log::info!("Still pending");
+    //     }
+    // }
+    // futures::ready!(message);
+
+    // match z.await {
+    //     Some(_) => todo!(),
+    //     None => todo!(),
+    // }
 
     //
 

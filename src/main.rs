@@ -509,24 +509,26 @@ fn draw_map(
     loaded_map.1 = true;
 
     for wall in &map.walls {
-        commands.spawn().insert_bundle({
-            SpriteBundle {
-                texture: asset_server.load("sprites/wall.png"),
-                transform: Transform {
-                    translation: Vec3::new(
-                        (map.tileSize * wall.x) as f32,
-                        (map.tileSize * wall.y) as f32,
-                        0.,
-                    ),
-                    // scale: Vec3::new(
-                    //     (map.tileSize * wall.width) as f32,
-                    //     (map.tileSize * wall.y) as f32,
-                    //     1.,
-                    // ),
-                    ..default()
-                },
-                ..default()
+        for x in 0..wall.width {
+            for y in 0..wall.height {
+                let dx = 0.5 + x as f32;
+                let dy = 0.5 + y as f32;
+
+                commands.spawn().insert_bundle({
+                    SpriteBundle {
+                        texture: asset_server.load("sprites/wall.png"),
+                        transform: Transform {
+                            translation: Vec3::new(
+                                map.tileSize as f32 * (wall.x as f32 + dx),
+                                -map.tileSize as f32 * (wall.y as f32 + dy),
+                                0.,
+                            ),
+                            ..default()
+                        },
+                        ..default()
+                    }
+                });
             }
-        });
+        }
     }
 }

@@ -5,6 +5,9 @@ use bevy::reflect::TypeUuid;
 use bevy::render::camera::RenderTarget;
 
 use bevy::render::texture::ImageSampler;
+use clap::Parser;
+use clipboard::{ClipboardContext, ClipboardProvider};
+use reqwest::header::AUTHORIZATION;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -15,8 +18,6 @@ use std::net::TcpStream;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
-use ws_stream_wasm::WsMessage;
-
 #[derive(Deserialize, Debug, Clone)]
 struct LoginResponse {
     token: String,
@@ -25,6 +26,11 @@ struct LoginResponse {
 #[derive(Serialize, Debug)]
 struct InitialState {
     token: String,
+    stateId: String,
+}
+
+#[derive(Deserialize)]
+struct CreateRoomResponse {
     stateId: String,
 }
 
@@ -50,12 +56,9 @@ fn decode_user_id_without_validating_jwt(token: &str) -> Result<String, TokenErr
     }
 }
 
-fn login(_app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
-    let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
-
+fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
     let login_url = format!("https://coordinator.hathora.dev/{app_id}/login/anonymous");
     let client = reqwest::blocking::Client::new();
-
     let resp: LoginResponse = client.post(login_url).send()?.json()?;
     Ok(resp)
 }
@@ -75,17 +78,52 @@ fn setup(mut commands: Commands) {
         .insert(MainCamera);
 }
 
+#[derive(Parser)]
+struct Args {
+    room_id: Option<String>,
+}
+
+fn create_room(app_id: &str, token: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let client = reqwest::blocking::Client::new();
+    let create_url = format!("https://coordinator.hathora.dev/{app_id}/create");
+
+    let response: CreateRoomResponse = client
+        .post(create_url)
+        .header(AUTHORIZATION, token)
+        .send()?
+        .json()?;
+
+    info!("Created room {}", response.stateId);
+
+    Ok(response.stateId)
+}
+
 fn main() {
-    let room_id = "374jv73032a1i";
+    let args = Args::parse();
+
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
     let login_result = login(app_id);
     let login_response = login_result.expect("Logging in should succeed");
 
+    let room_id = args.room_id.or_else(|| {
+        dbg!("No room provided, creating one");
+        match create_room(app_id, &login_response.token) {
+            Ok(create_response) => Some(create_response),
+            Err(e) => {
+                error!("Failed to create a room. Error was {}", e);
+                None
+            }
+        }
+    });
+
+    let room_id = room_id.expect("Room ID exists");
+
+    dbg!(&room_id);
+
     let user_id = decode_user_id_without_validating_jwt(&login_response.token)
         .expect("Decoding JWT should succeed");
-    let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
-    let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
 
+    let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
     let (mut socket, _response) =
         connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect");
 
@@ -94,14 +132,14 @@ fn main() {
         stateId: room_id.to_owned(),
     };
     let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
-    let message = WsMessage::Binary(message);
+    let message = Message::Binary(message);
 
     match socket.write_message(Message::binary(message)) {
         Ok(_) => {
-            dbg!("Successfully connected to websocket.");
+            info!("Successfully connected to websocket.");
         }
         Err(e) => {
-            dbg!("Failed to connect to websocket. Error was {}", e);
+            info!("Failed to connect to websocket. Error was {}", e);
         }
     }
 

@@ -10,13 +10,10 @@ bevy = "0.8.1"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 serde_json = "1.0.86"
 serde = { version = "1.0.145", features = ["derive"] }
-wasm-bindgen = "0.2.83"
-web-sys = { version = "0.3.60", features = ["console"] }
 base64 = "0.13.0"
-ws_stream_wasm = "0.7.3"
 futures = "0.3.24"
 futures-lite = "1.12.0"
-noop-waker = "0.1.0"
-wasm-bindgen-futures = "0.4.33"
 tungstenite = { version = "0.17.3", features = ["native-tls"] }
 url = "2.3.1"
+clipboard = "0.5.0"
+clap = { version = "4.0.17", features = ["derive"] }

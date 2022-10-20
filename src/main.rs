@@ -1,8 +1,10 @@
 use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 
+use bevy::reflect::TypeUuid;
 use bevy::render::camera::RenderTarget;
 
+use bevy::render::texture::ImageSampler;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -105,10 +107,14 @@ fn main() {
 
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_asset::<Map>()
+        .init_asset_loader::<MapLoader>()
         .insert_resource(socket)
         .insert_resource(UserId(user_id))
         .insert_resource(MouseLocation(Vec2::ZERO))
         .add_startup_system(setup)
+        .add_startup_system(load_map)
+        .add_system(draw_map)
         .add_system(bevy::window::close_on_esc)
         .add_system(read_from_server)
         .add_system(write_inputs)
@@ -433,5 +439,94 @@ fn write_inputs(
             // todo: remove this
             *mouse_location = MouseLocation(world_pos);
         }
+    }
+}
+
+use bevy::asset::{AssetLoader, LoadedAsset};
+
+#[derive(Default)]
+struct MapLoader {}
+
+#[derive(Deserialize, Debug)]
+struct Wall {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+}
+
+#[derive(Deserialize, TypeUuid, Debug)]
+#[uuid = "39cadc56-aa9c-4543-8640-a018b74b5052"]
+struct Map {
+    tileSize: i32,
+    top: i32,
+    left: i32,
+    bottom: i32,
+    right: i32,
+    walls: Vec<Wall>,
+}
+
+impl AssetLoader for MapLoader {
+    fn load<'a>(
+        &'a self,
+        bytes: &'a [u8],
+        load_context: &'a mut bevy::asset::LoadContext,
+    ) -> bevy::utils::BoxedFuture<'a, Result<(), bevy::asset::Error>> {
+        Box::pin(async move {
+            let map = serde_json::from_slice::<Map>(bytes)?;
+            load_context.set_default_asset(LoadedAsset::new(map));
+            Ok(())
+        })
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["json"]
+    }
+}
+
+struct LoadedMap(Handle<Map>, bool);
+
+fn load_map(asset_server: Res<AssetServer>, mut commands: Commands) {
+    let map_loading = asset_server.load("data/map.json");
+    commands.insert_resource(LoadedMap(map_loading, false));
+}
+
+fn draw_map(
+    asset_server: Res<AssetServer>,
+    mut loaded_map: ResMut<LoadedMap>,
+    mut commands: Commands,
+    map_assets: ResMut<Assets<Map>>,
+) {
+    let map_asset = map_assets.get(&loaded_map.0);
+
+    if map_asset.is_none() || loaded_map.1 {
+        return;
+    }
+
+    let map = map_asset.expect("Verified that map isn't None");
+
+    info!("Custom asset loaded: {:?}", map);
+    loaded_map.1 = true;
+
+    for wall in &map.walls {
+        commands.spawn().insert_bundle({
+            SpriteBundle {
+                texture: asset_server.load("sprites/wall.png"),
+                transform: Transform {
+                    translation: Vec3::new(
+                        (map.tileSize * wall.x) as f32,
+                        (map.tileSize * wall.y) as f32,
+                        0.,
+                    ),
+                    // scale: Vec3::new(
+                    //     (map.tileSize * wall.width) as f32,
+                    //     (map.tileSize * wall.y) as f32,
+                    //     1.,
+                    // ),
+                    ..default()
+                },
+                ..default()
+            }
+        });
     }
 }

@@ -144,6 +144,8 @@ fn main() {
             let stream = tls.get_mut();
             if let Err(err) = stream.set_nonblocking(true) {
                 dbg!("Failed to set nonblocking!");
+            } else {
+                dbg!("Set nonblocking");
             }
         }
         _ => todo!(),
@@ -223,8 +225,9 @@ fn read_from_server(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
-    if let Ok(msg) = socket.read_message() {
-        info!("got some data!");
+    match socket.read_message() {
+        Ok(msg) => {
+             info!("got some data!");
 
         match msg {
             Message::Text(_) => {
@@ -356,6 +359,11 @@ fn read_from_server(
                 debug!("Got frame");
             }
         }
+        },
+        Err(e) => {
+            info!("Error in stream: {}", e);
+        },
+       
     }
 }
 

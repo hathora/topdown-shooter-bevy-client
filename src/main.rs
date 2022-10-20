@@ -2,22 +2,22 @@ use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 
 use bevy::render::camera::RenderTarget;
-use bevy::tasks::AsyncComputeTaskPool;
-use bevy::ui::update;
-use futures::{stream::StreamExt, Future};
-use futures::{FutureExt, SinkExt};
+
+
+use futures::{stream::StreamExt};
+use futures::{SinkExt};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::f32::consts::PI;
+
 use std::iter::Iterator;
 use std::net::TcpStream;
-use std::pin::Pin;
-use std::task::Context;
+
+
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
-use wasm_bindgen::prelude::*;
-use ws_stream_wasm::{WsErr, WsMessage, WsMeta, WsStream};
+
+use ws_stream_wasm::{WsMessage};
 
 #[derive(Deserialize, Debug, Clone)]
 struct LoginResponse {
@@ -40,7 +40,7 @@ struct TokenError;
 
 fn decode_user_id_without_validating_jwt(token: &str) -> Result<String, TokenError> {
     let segments: Vec<&str> = token.split('.').collect();
-    let id = segments[1];
+    let _id = segments[1];
 
     match base64::decode_config(segments[1], base64::URL_SAFE_NO_PAD) {
         Ok(data) => {
@@ -52,7 +52,7 @@ fn decode_user_id_without_validating_jwt(token: &str) -> Result<String, TokenErr
     }
 }
 
-fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
+fn login(_app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
 
     let login_url = format!("https://coordinator.hathora.dev/{app_id}/login/anonymous");
@@ -328,12 +328,12 @@ struct MouseLocation(Vec2);
 
 fn write_inputs(
     input: Res<Input<KeyCode>>,
-    mut query: Query<(&CurrentPlayer, &Transform)>,
+    query: Query<(&CurrentPlayer, &Transform)>,
     // need to get window dimensions
     wnds: Res<Windows>,
     q_camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut mouse_location: ResMut<MouseLocation>,
-    mut mouse_motion_events: EventReader<MouseMotion>,
+    mouse_motion_events: EventReader<MouseMotion>,
     mouse_button_input: Res<Input<MouseButton>>,
 
     mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,

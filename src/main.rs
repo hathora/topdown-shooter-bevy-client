@@ -3,9 +3,6 @@ use bevy::prelude::*;
 
 use bevy::render::camera::RenderTarget;
 
-
-use futures::{stream::StreamExt};
-use futures::{SinkExt};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -13,11 +10,10 @@ use std::collections::HashSet;
 use std::iter::Iterator;
 use std::net::TcpStream;
 
-
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
-use ws_stream_wasm::{WsMessage};
+use ws_stream_wasm::WsMessage;
 
 #[derive(Deserialize, Debug, Clone)]
 struct LoginResponse {
@@ -190,7 +186,8 @@ fn read_from_server(
                             found = true;
                             player_transform.translation.x = player_update.position.x;
                             player_transform.translation.y = -player_update.position.y;
-                            player_transform.rotation = Quat::from_rotation_z(-player_update.aimAngle)
+                            player_transform.rotation =
+                                Quat::from_rotation_z(-player_update.aimAngle)
                         }
                     }
 
@@ -342,7 +339,9 @@ fn write_inputs(
         debug!("Mouse clicked.");
         let mouse_input = ClickInput { serialized_type: 2 };
         let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
-        socket.write_message(Message::Binary(message));
+        if let Err(e) = socket.write_message(Message::Binary(message)) {
+            warn!("Socket failed to write, error was {}", e);
+        }
     }
 
     debug!("Processing keyboard input");
@@ -376,7 +375,9 @@ fn write_inputs(
         };
 
         let message = serde_json::to_vec(&input).expect("Serialization should work");
-        socket.write_message(Message::Binary(message));
+        if let Err(e) = socket.write_message(Message::Binary(message)) {
+            warn!("Socket failed to write, error was {}", e);
+        }
     }
 
     if !mouse_motion_events.is_empty() {
@@ -424,7 +425,9 @@ fn write_inputs(
                 };
 
                 let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
-                socket.write_message(Message::Binary(message));
+                if let Err(e) = socket.write_message(Message::Binary(message)) {
+                    warn!("Socket failed to write, error was {}", e);
+                }
             }
 
             // todo: remove this

@@ -125,7 +125,7 @@ fn main() {
 
     let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
     let (mut socket, _response) =
-        connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect");
+        connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect to websockets");
 
     let initial_state = InitialState {
         token: login_response.token,
@@ -136,10 +136,10 @@ fn main() {
 
     match socket.write_message(Message::binary(message)) {
         Ok(_) => {
-            info!("Successfully connected to websocket.");
+            dbg!("Successfully connected to websocket.");
         }
         Err(e) => {
-            info!("Failed to connect to websocket. Error was {}", e);
+            dbg!("Failed to connect to websocket. Error was {}", e);
         }
     }
 

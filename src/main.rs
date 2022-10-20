@@ -6,12 +6,16 @@ use bevy::tasks::AsyncComputeTaskPool;
 use bevy::ui::update;
 use futures::{stream::StreamExt, Future};
 use futures::{FutureExt, SinkExt};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::f32::consts::PI;
 use std::iter::Iterator;
+use std::net::TcpStream;
 use std::pin::Pin;
 use std::task::Context;
+use tungstenite::stream::MaybeTlsStream;
+use tungstenite::{connect, Message, WebSocket};
 use wasm_bindgen::prelude::*;
 use ws_stream_wasm::{WsErr, WsMessage, WsMeta, WsStream};
 
@@ -48,13 +52,13 @@ fn decode_user_id_without_validating_jwt(token: &str) -> Result<String, TokenErr
     }
 }
 
-async fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
+fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
 
     let login_url = format!("https://coordinator.hathora.dev/{app_id}/login/anonymous");
-    let client = reqwest::Client::new();
+    let client = reqwest::blocking::Client::new();
 
-    let resp: LoginResponse = client.post(login_url).send().await?.json().await?;
+    let resp: LoginResponse = client.post(login_url).send()?.json()?;
     Ok(resp)
 }
 
@@ -70,11 +74,10 @@ fn setup(mut commands: Commands) {
         .insert(MainCamera);
 }
 
-#[wasm_bindgen]
-pub async fn run() {
+fn main() {
     let room_id = "374jv73032a1i";
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
-    let login_result = login(app_id).await;
+    let login_result = login(app_id);
     let login_response = login_result.expect("Logging in should succeed");
 
     let user_id = decode_user_id_without_validating_jwt(&login_response.token)
@@ -82,9 +85,8 @@ pub async fn run() {
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
     let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
 
-    let (_ws, mut ws_stream) = WsMeta::connect(websocket_url, None)
-        .await
-        .expect_throw("assume the connection succeeds");
+    let (mut socket, _response) =
+        connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect");
 
     let initial_state = InitialState {
         token: login_response.token,
@@ -92,19 +94,23 @@ pub async fn run() {
     };
     let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
     let message = WsMessage::Binary(message);
-    let send_result = ws_stream.send(message).await;
 
-    match send_result {
-        Ok(_) => debug!("Successfully wrote to websocket."),
-        Err(e) => error!("Failed to write to websocket; {}", e),
+    match socket.write_message(Message::binary(message)) {
+        Ok(_) => {
+            dbg!("Successfully connected to websocket.");
+        }
+        Err(e) => {
+            dbg!("Failed to connect to websocket. Error was {}", e);
+        }
     }
 
     App::new()
         .add_plugins(DefaultPlugins)
-        .insert_resource(ws_stream)
+        .insert_resource(socket)
         .insert_resource(UserId(user_id))
         .insert_resource(MouseLocation(Vec2::ZERO))
         .add_startup_system(setup)
+        .add_system(bevy::window::close_on_esc)
         .add_system(read_from_server)
         .add_system(write_inputs)
         .run();
@@ -180,66 +186,93 @@ fn poll_for_update(socket: &mut WsStream) -> Option<UpdateMessage> {
 }
 
 fn read_from_server(
-    mut socket: ResMut<WsStream>,
+    mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
     client_user_id: Res<UserId>,
     mut camera_query: Query<(&Camera, &mut Transform), Without<UserId>>,
     mut query: Query<(Entity, &UserId, &mut Transform), Without<Camera>>,
     mut commands: Commands,
 ) {
-    if let Some(update) = poll_for_update(&mut socket) {
-        let mut spawned: HashSet<String> = HashSet::new();
+    let msg = socket.read_message().expect("Error reading message");
 
-        for (entity, user_id, mut player_transform) in &mut query {
-            let mut found = false;
-            spawned.insert(user_id.0.clone());
-            for player in update.state.players.iter() {
-                if player.id == user_id.0 {
-                    debug!("Updating {:?}", player.id);
-                    found = true;
-                    player_transform.translation.x = player.position.x;
-                    player_transform.translation.y = player.position.y;
+    match msg {
+        Message::Text(_) => {
+            debug!("Got text");
+        }
+        Message::Binary(data) => {
+            if !data.is_empty() {
+                let update: UpdateMessage =
+                    serde_json::from_slice(&data).expect("Deserialize should work");
+
+                let mut spawned: HashSet<String> = HashSet::new();
+
+                for (entity, user_id, mut player_transform) in &mut query {
+                    let mut found = false;
+                    spawned.insert(user_id.0.clone());
+                    for player in update.state.players.iter() {
+                        if player.id == user_id.0 {
+                            // dbg!("Updating {}", &player);
+                            found = true;
+                            player_transform.translation.x = player.position.x;
+                            player_transform.translation.y = player.position.y;
+                        }
+                    }
+
+                    if &user_id.0 == &client_user_id.0 {
+                        for (_camera, mut camera_transform) in &mut camera_query {
+                            *camera_transform = Transform {
+                                translation: Vec3::new(
+                                    player_transform.translation.x,
+                                    player_transform.translation.y,
+                                    camera_transform.translation.z,
+                                ),
+                                ..*camera_transform
+                            };
+                        }
+                    }
+
+                    if !found {
+                        dbg!("Despawning {}", user_id);
+                        commands.entity(entity).despawn();
+                    }
                 }
-            }
 
-            if &user_id.0 == &client_user_id.0 {
-                for (_camera, mut camera_transform) in &mut camera_query {
-                    *camera_transform = Transform {
-                        translation: Vec3::new(
-                            player_transform.translation.x,
-                            player_transform.translation.y,
-                            camera_transform.translation.z,
-                        ),
-                        ..*camera_transform
-                    };
+                for player in update.state.players.iter() {
+                    if !spawned.contains(&player.id) {
+                        dbg!("Spawning {}", &player.id);
+                        let mut entity = commands.spawn();
+                        entity
+                            .insert(UserId(player.id.clone()))
+                            .insert_bundle(SpriteBundle {
+                                // TODO: update angle
+                                transform: Transform {
+                                    translation: Vec3::new(
+                                        player.position.x,
+                                        player.position.y,
+                                        0.,
+                                    ),
+                                    ..default()
+                                },
+                                ..default()
+                            });
+
+                        if &player.id == &client_user_id.0 {
+                            entity.insert(CurrentPlayer);
+                        }
+                    }
                 }
-            }
-
-            if !found {
-                info!("Despawning {:?}", entity);
-                commands.entity(entity).despawn();
             }
         }
-
-        for player in update.state.players.iter() {
-            if !spawned.contains(&player.id) {
-                info!("Spawning {}", &player.id);
-                let mut entity = commands.spawn();
-
-                entity
-                    .insert(UserId(player.id.clone()))
-                    .insert_bundle(SpriteBundle {
-                        // TODO: update angle
-                        transform: Transform {
-                            translation: Vec3::new(player.position.x, player.position.y, 0.),
-                            ..default()
-                        },
-                        ..default()
-                    });
-
-                if &player.id == &client_user_id.0 {
-                    entity.insert(CurrentPlayer);
-                }
-            }
+        Message::Ping(_) => {
+            debug!("Got ping");
+        }
+        Message::Pong(_) => {
+            debug!("Got pong");
+        }
+        Message::Close(_) => {
+            debug!("Got close");
+        }
+        Message::Frame(_) => {
+            debug!("Got frame");
         }
     }
 }
@@ -265,26 +298,15 @@ struct MouseLocation(Vec2);
 
 fn write_inputs(
     input: Res<Input<KeyCode>>,
-    mut socket: ResMut<WsStream>,
     mut query: Query<(&CurrentPlayer, &Transform)>,
     // need to get window dimensions
     wnds: Res<Windows>,
     q_camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut mouse_location: ResMut<MouseLocation>,
     mut mouse_motion_events: EventReader<MouseMotion>,
-) {
-    let waker = noop_waker::noop_waker();
-    let mut ctx = Context::from_waker(&waker);
-    match socket.poll_flush_unpin(&mut ctx) {
-        std::task::Poll::Ready(_) => {
-            debug!("Write buffer is empty");
-        }
-        std::task::Poll::Pending => {
-            debug!("Write buffer is still writing");
-            return;
-        }
-    }
 
+    mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
+) {
     debug!("Processing keyboard input");
 
     let mut keyboard_update_necessary = false;
@@ -316,10 +338,7 @@ fn write_inputs(
         };
 
         let message = serde_json::to_vec(&input).expect("Serialization should work");
-        let message = WsMessage::Binary(message);
-        let mut task = socket.send(message);
-
-        debug!("keyboard task: {:?}", task.poll_unpin(&mut ctx));
+        socket.write_message(Message::Binary(message));
     }
 
     if !mouse_motion_events.is_empty() {
@@ -368,11 +387,8 @@ fn write_inputs(
             };
 
             let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
-            let message = WsMessage::Binary(message);
-            let mut task = socket.send(message);
-
-            info!("mouse task: {:?}", task.poll_unpin(&mut ctx));
-
+            socket.write_message(Message::Binary(message));
+            // todo: remove this
             *mouse_location = MouseLocation(world_pos);
         }
     }

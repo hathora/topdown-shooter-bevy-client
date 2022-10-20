@@ -166,6 +166,7 @@ fn read_from_server(
     >,
 
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
 ) {
     let msg = socket.read_message().expect("Error reading message");
 
@@ -189,6 +190,7 @@ fn read_from_server(
                             found = true;
                             player_transform.translation.x = player_update.position.x;
                             player_transform.translation.y = -player_update.position.y;
+                            player_transform.rotation = Quat::from_rotation_z(-player_update.aimAngle)
                         }
                     }
 
@@ -219,6 +221,7 @@ fn read_from_server(
                         entity
                             .insert(UserId(player_update.id.clone()))
                             .insert_bundle(SpriteBundle {
+                                texture: asset_server.load("sprites/player.png"),
                                 // TODO: update angle
                                 transform: Transform {
                                     translation: Vec3::new(
@@ -226,6 +229,7 @@ fn read_from_server(
                                         -player_update.position.y,
                                         0.,
                                     ),
+                                    rotation: Quat::from_rotation_z(-player_update.aimAngle),
                                     ..default()
                                 },
                                 ..default()
@@ -245,16 +249,16 @@ fn read_from_server(
 
                     for bullet_update in update.state.bullets.iter() {
                         if bullet_update.id == bullet.0 {
-                            info!("Updating {}", bullet.0);
+                            debug!("Updating {}", bullet.0);
                             found = true;
                             bullet_transform.translation.x = bullet_update.position.x;
                             bullet_transform.translation.y = -bullet_update.position.y;
-                            info!("Bullet transform is {}", bullet_transform.translation);
+                            debug!("Bullet transform is {}", bullet_transform.translation);
                         }
                     }
 
                     if !found {
-                        info!("Despawning bullet {}", bullet.0);
+                        debug!("Despawning bullet {}", bullet.0);
                         commands.entity(bullet_entity).despawn();
                     }
                 }
@@ -266,6 +270,7 @@ fn read_from_server(
                             .spawn()
                             .insert(BulletComponent(bullet_update.id))
                             .insert_bundle(SpriteBundle {
+                                texture: asset_server.load("sprites/bullet.png"),
                                 // TODO: update angle
                                 transform: Transform {
                                     translation: Vec3::new(

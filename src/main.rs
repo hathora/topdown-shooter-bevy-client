@@ -66,6 +66,9 @@ fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
 struct UserId(String);
 
 #[derive(Component)]
+struct BulletComponent(i32);
+
+#[derive(Component)]
 struct MainCamera;
 
 fn setup(mut commands: Commands) {
@@ -149,47 +152,19 @@ struct UpdateMessage {
     state: GameState,
 }
 
-fn poll_for_update(socket: &mut WsStream) -> Option<UpdateMessage> {
-    let waker = noop_waker::noop_waker();
-    let mut ctx = Context::from_waker(&waker);
-
-    match socket.poll_next_unpin(&mut ctx) {
-        std::task::Poll::Ready(message) => match message {
-            Some(message) => match message {
-                WsMessage::Text(t) => {
-                    if !t.is_empty() {
-                        return Some(
-                            serde_json::from_str::<UpdateMessage>(&t)
-                                .expect("Successfully deserialized update"),
-                        );
-                    }
-                    None
-                }
-                WsMessage::Binary(b) => {
-                    if !b.is_empty() {
-                        return Some(
-                            serde_json::from_slice::<UpdateMessage>(&b)
-                                .expect("Successfully deserialized update"),
-                        );
-                    }
-                    return None;
-                }
-            },
-            None => {
-                return None;
-            }
-        },
-        std::task::Poll::Pending => {
-            return None;
-        }
-    }
-}
-
 fn read_from_server(
     mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
     client_user_id: Res<UserId>,
-    mut camera_query: Query<(&Camera, &mut Transform), Without<UserId>>,
-    mut query: Query<(Entity, &UserId, &mut Transform), Without<Camera>>,
+    mut camera_query: Query<(&Camera, &mut Transform), (Without<UserId>, Without<BulletComponent>)>,
+    mut player_query: Query<
+        (Entity, &UserId, &mut Transform),
+        (Without<Camera>, Without<BulletComponent>),
+    >,
+    mut bullet_query: Query<
+        (Entity, &BulletComponent, &mut Transform),
+        (Without<Camera>, Without<UserId>),
+    >,
+
     mut commands: Commands,
 ) {
     let msg = socket.read_message().expect("Error reading message");
@@ -203,22 +178,23 @@ fn read_from_server(
                 let update: UpdateMessage =
                     serde_json::from_slice(&data).expect("Deserialize should work");
 
-                let mut spawned: HashSet<String> = HashSet::new();
+                let mut spawned_players: HashSet<String> = HashSet::new();
 
-                for (entity, user_id, mut player_transform) in &mut query {
+                for (entity, user_id, mut player_transform) in &mut player_query {
                     let mut found = false;
-                    spawned.insert(user_id.0.clone());
-                    for player in update.state.players.iter() {
-                        if player.id == user_id.0 {
-                            // dbg!("Updating {}", &player);
+                    spawned_players.insert(user_id.0.clone());
+                    for player_update in update.state.players.iter() {
+                        if player_update.id == user_id.0 {
+                            debug!("Updating {:?}", &player_update);
                             found = true;
-                            player_transform.translation.x = player.position.x;
-                            player_transform.translation.y = player.position.y;
+                            player_transform.translation.x = player_update.position.x;
+                            player_transform.translation.y = -player_update.position.y;
                         }
                     }
 
                     if &user_id.0 == &client_user_id.0 {
                         for (_camera, mut camera_transform) in &mut camera_query {
+                            debug!("Player transform is {}", player_transform.translation);
                             *camera_transform = Transform {
                                 translation: Vec3::new(
                                     player_transform.translation.x,
@@ -231,23 +207,23 @@ fn read_from_server(
                     }
 
                     if !found {
-                        dbg!("Despawning {}", user_id);
+                        debug!("Despawning {:?}", user_id);
                         commands.entity(entity).despawn();
                     }
                 }
 
-                for player in update.state.players.iter() {
-                    if !spawned.contains(&player.id) {
-                        dbg!("Spawning {}", &player.id);
+                for player_update in update.state.players.iter() {
+                    if !spawned_players.contains(&player_update.id) {
+                        debug!("Spawning {}", &player_update.id);
                         let mut entity = commands.spawn();
                         entity
-                            .insert(UserId(player.id.clone()))
+                            .insert(UserId(player_update.id.clone()))
                             .insert_bundle(SpriteBundle {
                                 // TODO: update angle
                                 transform: Transform {
                                     translation: Vec3::new(
-                                        player.position.x,
-                                        player.position.y,
+                                        player_update.position.x,
+                                        -player_update.position.y,
                                         0.,
                                     ),
                                     ..default()
@@ -255,9 +231,52 @@ fn read_from_server(
                                 ..default()
                             });
 
-                        if &player.id == &client_user_id.0 {
+                        if &player_update.id == &client_user_id.0 {
                             entity.insert(CurrentPlayer);
                         }
+                    }
+                }
+
+                let mut spawned_bullets: HashSet<i32> = HashSet::new();
+
+                for (bullet_entity, bullet, mut bullet_transform) in &mut bullet_query {
+                    let mut found = false;
+                    spawned_bullets.insert(bullet.0);
+
+                    for bullet_update in update.state.bullets.iter() {
+                        if bullet_update.id == bullet.0 {
+                            info!("Updating {}", bullet.0);
+                            found = true;
+                            bullet_transform.translation.x = bullet_update.position.x;
+                            bullet_transform.translation.y = -bullet_update.position.y;
+                            info!("Bullet transform is {}", bullet_transform.translation);
+                        }
+                    }
+
+                    if !found {
+                        info!("Despawning bullet {}", bullet.0);
+                        commands.entity(bullet_entity).despawn();
+                    }
+                }
+
+                for bullet_update in update.state.bullets.iter() {
+                    if !spawned_bullets.contains(&bullet_update.id) {
+                        debug!("Spawning bullet {}", bullet_update.id);
+                        commands
+                            .spawn()
+                            .insert(BulletComponent(bullet_update.id))
+                            .insert_bundle(SpriteBundle {
+                                // TODO: update angle
+                                transform: Transform {
+                                    translation: Vec3::new(
+                                        bullet_update.position.x,
+                                        -bullet_update.position.y,
+                                        0.,
+                                    ),
+                                    ..default()
+                                },
+                                ..default()
+                            });
                     }
                 }
             }
@@ -294,6 +313,12 @@ struct AngleInput {
     angle: f32,
 }
 
+#[derive(Serialize)]
+struct ClickInput {
+    #[serde(rename = "type")]
+    serialized_type: u64,
+}
+
 struct MouseLocation(Vec2);
 
 fn write_inputs(
@@ -304,9 +329,17 @@ fn write_inputs(
     q_camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut mouse_location: ResMut<MouseLocation>,
     mut mouse_motion_events: EventReader<MouseMotion>,
+    mouse_button_input: Res<Input<MouseButton>>,
 
     mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
 ) {
+    if mouse_button_input.just_pressed(MouseButton::Left) {
+        debug!("Mouse clicked.");
+        let mouse_input = ClickInput { serialized_type: 2 };
+        let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
+        socket.write_message(Message::Binary(message));
+    }
+
     debug!("Processing keyboard input");
 
     let mut keyboard_update_necessary = false;
@@ -342,7 +375,7 @@ fn write_inputs(
     }
 
     if !mouse_motion_events.is_empty() {
-        info!("Processing mouse input");
+        debug!("Processing mouse input");
 
         // get the camera info and transform
         // assuming there is exactly one main camera entity, so query::single() is OK
@@ -373,21 +406,22 @@ fn write_inputs(
             // reduce it to a 2D value
             let world_pos: Vec2 = world_pos.truncate();
 
-            info!("Mouse coords: {}/{}", world_pos.x, world_pos.y);
+            debug!("Mouse coords: {}/{}", world_pos.x, world_pos.y);
 
-            let (_, player_transform) = query.single();
+            for (_, player_transform) in query.iter() {
+                let angle =
+                    (world_pos - player_transform.translation.truncate()).angle_between(Vec2::X);
+                debug!("Angle {}", angle);
 
-            let angle =
-                (world_pos - player_transform.translation.truncate()).angle_between(Vec2::X);
-            info!("Angle {}", angle);
+                let mouse_input = AngleInput {
+                    serialized_type: 1,
+                    angle,
+                };
 
-            let mouse_input = AngleInput {
-                serialized_type: 1,
-                angle,
-            };
+                let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
+                socket.write_message(Message::Binary(message));
+            }
 
-            let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
-            socket.write_message(Message::Binary(message));
             // todo: remove this
             *mouse_location = MouseLocation(world_pos);
         }

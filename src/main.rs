@@ -7,7 +7,7 @@ use bevy::render::camera::RenderTarget;
 use bevy::render::texture::ImageSampler;
 use clap::Parser;
 use clipboard::{ClipboardContext, ClipboardProvider};
-use reqwest::header::AUTHORIZATION;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -90,6 +90,8 @@ fn create_room(app_id: &str, token: &str) -> Result<String, Box<dyn std::error::
     let response: CreateRoomResponse = client
         .post(create_url)
         .header(AUTHORIZATION, token)
+        .header(CONTENT_TYPE, "application/octet-stream" )
+        .body(vec![])
         .send()?
         .json()?;
 
@@ -101,7 +103,8 @@ fn create_room(app_id: &str, token: &str) -> Result<String, Box<dyn std::error::
 fn main() {
     let args = Args::parse();
 
-    let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
+    // let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
+    let app_id = "app-e623314c-c28b-4c9c-a623-c02c7efc25c6";
     let login_result = login(app_id);
     let login_response = login_result.expect("Logging in should succeed");
 
@@ -124,34 +127,42 @@ fn main() {
         .expect("Decoding JWT should succeed");
 
     let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
-    let (mut socket, _response) =
+    let (mut socket, response) =
         connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect to websockets");
+
+    dbg!(response);
+
+    // match socket.get_mut() {
+    //     MaybeTlsStream::Plain(stream) => {
+    //         if let Err(err) = stream.set_nonblocking(true) {
+    //             dbg!("Failed to set nonblocking!");
+    //         }
+    //     }
+    //     MaybeTlsStream::NativeTls(tls) => {
+    //         let stream = tls.get_mut();
+    //         if let Err(err) = stream.set_nonblocking(true) {
+    //             dbg!("Failed to set nonblocking!");
+    //         } else {
+    //             dbg!("Set nonblocking");
+    //         }
+    //     }
+    //     _ => todo!(),
+    // }
 
     let initial_state = InitialState {
         token: login_response.token,
         stateId: room_id.to_owned(),
     };
-    let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
-    let message = Message::Binary(message);
+    let message = serde_json::to_string(&initial_state).expect("Serialization should work");
+    // dbg!("{}", &message);
+    use encoding::Encoding;
+    let bytes = encoding::all::UTF_8
+        .encode(&message, encoding::EncoderTrap::Strict)
+        .expect("utf8 encoding");
 
-    match socket.get_mut() {
-        MaybeTlsStream::Plain(stream) => {
-            if let Err(err) = stream.set_nonblocking(true) {
-                dbg!("Failed to set nonblocking!");
-            }
-        }
-        MaybeTlsStream::NativeTls(tls) => {
-            let stream = tls.get_mut();
-            if let Err(err) = stream.set_nonblocking(true) {
-                dbg!("Failed to set nonblocking!");
-            } else {
-                dbg!("Set nonblocking");
-            }
-        }
-        _ => todo!(),
-    }
+    // dbg!("{}", &bytes);
 
-    match socket.write_message(Message::binary(message)) {
+    match socket.write_message(Message::binary(bytes)) {
         Ok(_) => {
             dbg!("Successfully connected to websocket.");
         }
@@ -227,143 +238,146 @@ fn read_from_server(
 ) {
     match socket.read_message() {
         Ok(msg) => {
-             info!("got some data!");
+            info!("got some data!");
 
-        match msg {
-            Message::Text(_) => {
-                debug!("Got text");
-            }
-            Message::Binary(data) => {
-                if !data.is_empty() {
-                    let update: UpdateMessage =
-                        serde_json::from_slice(&data).expect("Deserialize should work");
+            match msg {
+                Message::Text(_) => {
+                    info!("Got text");
+                }
+                Message::Binary(data) => {
+                    info!("Got binary");
 
-                    let mut spawned_players: HashSet<String> = HashSet::new();
+                    if !data.is_empty() {
+                        let update: UpdateMessage =
+                            serde_json::from_slice(&data).expect("Deserialize should work");
 
-                    for (entity, user_id, mut player_transform) in &mut player_query {
-                        let mut found = false;
-                        spawned_players.insert(user_id.0.clone());
-                        for player_update in update.state.players.iter() {
-                            if player_update.id == user_id.0 {
-                                debug!("Updating {:?}", &player_update);
-                                found = true;
-                                player_transform.translation.x = player_update.position.x;
-                                player_transform.translation.y = -player_update.position.y;
-                                player_transform.rotation =
-                                    Quat::from_rotation_z(-player_update.aimAngle)
+                        let mut spawned_players: HashSet<String> = HashSet::new();
+
+                        for (entity, user_id, mut player_transform) in &mut player_query {
+                            let mut found = false;
+                            spawned_players.insert(user_id.0.clone());
+                            for player_update in update.state.players.iter() {
+                                if player_update.id == user_id.0 {
+                                    debug!("Updating {:?}", &player_update);
+                                    found = true;
+                                    player_transform.translation.x = player_update.position.x;
+                                    player_transform.translation.y = -player_update.position.y;
+                                    player_transform.rotation =
+                                        Quat::from_rotation_z(-player_update.aimAngle)
+                                }
                             }
-                        }
 
-                        if &user_id.0 == &client_user_id.0 {
-                            for (_camera, mut camera_transform) in &mut camera_query {
-                                debug!("Player transform is {}", player_transform.translation);
-                                *camera_transform = Transform {
-                                    translation: Vec3::new(
-                                        player_transform.translation.x,
-                                        player_transform.translation.y,
-                                        camera_transform.translation.z,
-                                    ),
-                                    ..*camera_transform
-                                };
-                            }
-                        }
-
-                        if !found {
-                            debug!("Despawning {:?}", user_id);
-                            commands.entity(entity).despawn();
-                        }
-                    }
-
-                    for player_update in update.state.players.iter() {
-                        if !spawned_players.contains(&player_update.id) {
-                            debug!("Spawning {}", &player_update.id);
-                            let mut entity = commands.spawn();
-                            entity
-                                .insert(UserId(player_update.id.clone()))
-                                .insert_bundle(SpriteBundle {
-                                    texture: asset_server.load("sprites/player.png"),
-                                    // TODO: update angle
-                                    transform: Transform {
+                            if &user_id.0 == &client_user_id.0 {
+                                for (_camera, mut camera_transform) in &mut camera_query {
+                                    debug!("Player transform is {}", player_transform.translation);
+                                    *camera_transform = Transform {
                                         translation: Vec3::new(
-                                            player_update.position.x,
-                                            -player_update.position.y,
-                                            0.,
+                                            player_transform.translation.x,
+                                            player_transform.translation.y,
+                                            camera_transform.translation.z,
                                         ),
-                                        rotation: Quat::from_rotation_z(-player_update.aimAngle),
-                                        ..default()
-                                    },
-                                    ..default()
-                                });
+                                        ..*camera_transform
+                                    };
+                                }
+                            }
 
-                            if &player_update.id == &client_user_id.0 {
-                                entity.insert(CurrentPlayer);
+                            if !found {
+                                debug!("Despawning {:?}", user_id);
+                                commands.entity(entity).despawn();
                             }
                         }
-                    }
 
-                    let mut spawned_bullets: HashSet<i32> = HashSet::new();
+                        for player_update in update.state.players.iter() {
+                            if !spawned_players.contains(&player_update.id) {
+                                debug!("Spawning {}", &player_update.id);
+                                let mut entity = commands.spawn();
+                                entity
+                                    .insert(UserId(player_update.id.clone()))
+                                    .insert_bundle(SpriteBundle {
+                                        texture: asset_server.load("sprites/player.png"),
+                                        // TODO: update angle
+                                        transform: Transform {
+                                            translation: Vec3::new(
+                                                player_update.position.x,
+                                                -player_update.position.y,
+                                                0.,
+                                            ),
+                                            rotation: Quat::from_rotation_z(
+                                                -player_update.aimAngle,
+                                            ),
+                                            ..default()
+                                        },
+                                        ..default()
+                                    });
 
-                    for (bullet_entity, bullet, mut bullet_transform) in &mut bullet_query {
-                        let mut found = false;
-                        spawned_bullets.insert(bullet.0);
+                                if &player_update.id == &client_user_id.0 {
+                                    entity.insert(CurrentPlayer);
+                                }
+                            }
+                        }
+
+                        let mut spawned_bullets: HashSet<i32> = HashSet::new();
+
+                        for (bullet_entity, bullet, mut bullet_transform) in &mut bullet_query {
+                            let mut found = false;
+                            spawned_bullets.insert(bullet.0);
+
+                            for bullet_update in update.state.bullets.iter() {
+                                if bullet_update.id == bullet.0 {
+                                    debug!("Updating {}", bullet.0);
+                                    found = true;
+                                    bullet_transform.translation.x = bullet_update.position.x;
+                                    bullet_transform.translation.y = -bullet_update.position.y;
+                                    debug!("Bullet transform is {}", bullet_transform.translation);
+                                }
+                            }
+
+                            if !found {
+                                debug!("Despawning bullet {}", bullet.0);
+                                commands.entity(bullet_entity).despawn();
+                            }
+                        }
 
                         for bullet_update in update.state.bullets.iter() {
-                            if bullet_update.id == bullet.0 {
-                                debug!("Updating {}", bullet.0);
-                                found = true;
-                                bullet_transform.translation.x = bullet_update.position.x;
-                                bullet_transform.translation.y = -bullet_update.position.y;
-                                debug!("Bullet transform is {}", bullet_transform.translation);
-                            }
-                        }
-
-                        if !found {
-                            debug!("Despawning bullet {}", bullet.0);
-                            commands.entity(bullet_entity).despawn();
-                        }
-                    }
-
-                    for bullet_update in update.state.bullets.iter() {
-                        if !spawned_bullets.contains(&bullet_update.id) {
-                            debug!("Spawning bullet {}", bullet_update.id);
-                            commands
-                                .spawn()
-                                .insert(BulletComponent(bullet_update.id))
-                                .insert_bundle(SpriteBundle {
-                                    texture: asset_server.load("sprites/bullet.png"),
-                                    // TODO: update angle
-                                    transform: Transform {
-                                        translation: Vec3::new(
-                                            bullet_update.position.x,
-                                            -bullet_update.position.y,
-                                            0.,
-                                        ),
+                            if !spawned_bullets.contains(&bullet_update.id) {
+                                debug!("Spawning bullet {}", bullet_update.id);
+                                commands
+                                    .spawn()
+                                    .insert(BulletComponent(bullet_update.id))
+                                    .insert_bundle(SpriteBundle {
+                                        texture: asset_server.load("sprites/bullet.png"),
+                                        // TODO: update angle
+                                        transform: Transform {
+                                            translation: Vec3::new(
+                                                bullet_update.position.x,
+                                                -bullet_update.position.y,
+                                                0.,
+                                            ),
+                                            ..default()
+                                        },
                                         ..default()
-                                    },
-                                    ..default()
-                                });
+                                    });
+                            }
                         }
                     }
                 }
-            }
-            Message::Ping(_) => {
-                debug!("Got ping");
-            }
-            Message::Pong(_) => {
-                debug!("Got pong");
-            }
-            Message::Close(_) => {
-                debug!("Got close");
-            }
-            Message::Frame(_) => {
-                debug!("Got frame");
+                Message::Ping(_) => {
+                    info!("Got ping");
+                }
+                Message::Pong(_) => {
+                    info!("Got pong");
+                }
+                Message::Close(_) => {
+                    info!("Got close");
+                }
+                Message::Frame(_) => {
+                    info!("Got frame");
+                }
             }
         }
-        },
         Err(e) => {
             info!("Error in stream: {}", e);
-        },
-       
+        }
     }
 }
 

@@ -169,6 +169,7 @@ fn main() {
         .add_startup_system(load_map)
         .add_system(draw_map)
         .add_system(bevy::window::close_on_esc)
+        .add_system(copy_room_id)
         .add_system(read_from_server)
         .add_system(write_inputs)
         .run();
@@ -645,36 +646,53 @@ fn display_room_id(asset_server: Res<AssetServer>, mut commands: Commands, room_
                                 )
                                 .with_style(Style {
                                     margin: UiRect::all(Val::Px(5.0)),
+                                    align_self: AlignSelf::Center,
                                     ..default()
                                 }),
                             );
 
-                            parent
-                                .spawn_bundle(ButtonBundle {
-                                    style: Style {
-                                        size: Size::new(Val::Percent(20.0), Val::Percent(100.0)),
-                                        // center button
-                                        margin: UiRect::all(Val::Auto),
-                                        // horizontally center child text
-                                        justify_content: JustifyContent::Center,
-                                        // vertically center child text
-                                        align_items: AlignItems::Center,
-                                        ..default()
-                                    },
+                            parent.spawn_bundle(ButtonBundle {
+                                style: Style {
+                                    size: Size::new(Val::Px(50.0), Val::Px(50.0)),
+                                    // center button
+                                    margin: UiRect::all(Val::Auto),
+                                    // horizontally center child text
+                                    // justify_content: JustifyContent::Center,
+                                    // vertically center child text
+                                    // align_items: AlignItems::Center,
                                     ..default()
-                                })
-                                .with_children(|parent| {
-                                    parent.spawn_bundle(ImageBundle {
-                                        style: Style {
-                                            size: Size::new(Val::Px(500.0), Val::Auto),
-                                            ..default()
-                                        },
-                                        color: UiColor(Color::BISQUE),
-                                        image: asset_server.load("icons/content-copy.png").into(),
-                                        ..default()
-                                    });
-                                });
+                                },
+                                image: asset_server.load("icons/content-copy.png").into(),
+                                color: NORMAL_BUTTON.into(),
+                                ..default()
+                            });
                         });
                 });
         });
+}
+
+const NORMAL_BUTTON: Color = Color::rgb(0.80, 0.80, 0.80);
+const HOVERED_BUTTON: Color = Color::rgb(0.90, 0.90, 0.90);
+const PRESSED_BUTTON: Color = Color::WHITE;
+
+fn copy_room_id(mut interaction_query: Query<(&Interaction, &mut UiColor)>, room_id: Res<RoomId>) {
+    for (interaction, mut color) in &mut interaction_query {
+        info!("{:?}", interaction);
+        match *interaction {
+            Interaction::Clicked => {
+                info!("Button clicked");
+                let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+                ctx.set_contents(room_id.0.to_owned()).unwrap();
+                *color = PRESSED_BUTTON.into();
+            }
+            Interaction::Hovered => {
+                info!("Button clicked");
+                *color = HOVERED_BUTTON.into();
+            }
+            Interaction::None => {
+                info!("No interaction");
+                *color = NORMAL_BUTTON.into();
+            }
+        }
+    }
 }

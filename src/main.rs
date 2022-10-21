@@ -72,7 +72,7 @@ struct BulletComponent(i32);
 #[derive(Component)]
 struct MainCamera;
 
-fn setup(mut commands: Commands) {
+fn setup_camera(mut commands: Commands) {
     commands
         .spawn_bundle(Camera2dBundle::default())
         .insert(MainCamera);
@@ -83,6 +83,8 @@ struct Args {
     room_id: Option<String>,
 }
 
+struct RoomId(String);
+
 fn create_room(app_id: &str, token: &str) -> Result<String, Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::new();
     let create_url = format!("https://coordinator.hathora.dev/{app_id}/create");
@@ -90,7 +92,7 @@ fn create_room(app_id: &str, token: &str) -> Result<String, Box<dyn std::error::
     let response: CreateRoomResponse = client
         .post(create_url)
         .header(AUTHORIZATION, token)
-        .header(CONTENT_TYPE, "application/octet-stream" )
+        .header(CONTENT_TYPE, "application/octet-stream")
         .body(vec![])
         .send()?
         .json()?;
@@ -132,23 +134,6 @@ fn main() {
 
     dbg!(response);
 
-    // match socket.get_mut() {
-    //     MaybeTlsStream::Plain(stream) => {
-    //         if let Err(err) = stream.set_nonblocking(true) {
-    //             dbg!("Failed to set nonblocking!");
-    //         }
-    //     }
-    //     MaybeTlsStream::NativeTls(tls) => {
-    //         let stream = tls.get_mut();
-    //         if let Err(err) = stream.set_nonblocking(true) {
-    //             dbg!("Failed to set nonblocking!");
-    //         } else {
-    //             dbg!("Set nonblocking");
-    //         }
-    //     }
-    //     _ => todo!(),
-    // }
-
     let initial_state = InitialState {
         token: login_response.token,
         stateId: room_id.to_owned(),
@@ -177,8 +162,10 @@ fn main() {
         .init_asset_loader::<MapLoader>()
         .insert_resource(socket)
         .insert_resource(UserId(user_id))
+        .insert_resource(RoomId(room_id))
         .insert_resource(MouseLocation(Vec2::ZERO))
-        .add_startup_system(setup)
+        .add_startup_system(setup_camera)
+        .add_startup_system(display_room_id)
         .add_startup_system(load_map)
         .add_system(draw_map)
         .add_system(bevy::window::close_on_esc)
@@ -238,14 +225,14 @@ fn read_from_server(
 ) {
     match socket.read_message() {
         Ok(msg) => {
-            info!("got some data!");
+            debug!("got some data!");
 
             match msg {
                 Message::Text(_) => {
                     info!("Got text");
                 }
                 Message::Binary(data) => {
-                    info!("Got binary");
+                    debug!("Got binary");
 
                     if !data.is_empty() {
                         let update: UpdateMessage =
@@ -376,7 +363,7 @@ fn read_from_server(
             }
         }
         Err(e) => {
-            info!("Error in stream: {}", e);
+            debug!("Error in stream: {}", e);
         }
     }
 }
@@ -608,4 +595,86 @@ fn draw_map(
             }
         }
     }
+}
+
+fn display_room_id(asset_server: Res<AssetServer>, mut commands: Commands, room_id: Res<RoomId>) {
+    commands
+        .spawn_bundle(NodeBundle {
+            style: Style {
+                size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            },
+            color: Color::NONE.into(),
+            ..default()
+        })
+        .with_children(|parent| {
+            // left vertical fill (border)
+            parent
+                .spawn_bundle(NodeBundle {
+                    style: Style {
+                        size: Size::new(Val::Px(600.0), Val::Px(100.0)),
+                        border: UiRect::all(Val::Px(2.0)),
+                        ..default()
+                    },
+                    color: Color::rgb(0.65, 0.65, 0.65).into(),
+                    ..default()
+                })
+                .with_children(|parent| {
+                    // left vertical fill (content)
+                    parent
+                        .spawn_bundle(NodeBundle {
+                            style: Style {
+                                size: Size::new(Val::Percent(80.0), Val::Percent(100.0)),
+                                align_items: AlignItems::FlexEnd,
+                                ..default()
+                            },
+                            color: Color::rgb(0.15, 0.15, 0.15).into(),
+                            ..default()
+                        })
+                        .with_children(|parent| {
+                            // text
+                            parent.spawn_bundle(
+                                TextBundle::from_section(
+                                    format!("Room ID: {}", room_id.0),
+                                    TextStyle {
+                                        font: asset_server.load("fonts/FiraMono-Medium.ttf"),
+                                        font_size: 30.0,
+                                        color: Color::WHITE,
+                                    },
+                                )
+                                .with_style(Style {
+                                    margin: UiRect::all(Val::Px(5.0)),
+                                    ..default()
+                                }),
+                            );
+
+                            parent
+                                .spawn_bundle(ButtonBundle {
+                                    style: Style {
+                                        size: Size::new(Val::Percent(20.0), Val::Percent(100.0)),
+                                        // center button
+                                        margin: UiRect::all(Val::Auto),
+                                        // horizontally center child text
+                                        justify_content: JustifyContent::Center,
+                                        // vertically center child text
+                                        align_items: AlignItems::Center,
+                                        ..default()
+                                    },
+                                    ..default()
+                                })
+                                .with_children(|parent| {
+                                    parent.spawn_bundle(ImageBundle {
+                                        style: Style {
+                                            size: Size::new(Val::Px(500.0), Val::Auto),
+                                            ..default()
+                                        },
+                                        color: UiColor(Color::BISQUE),
+                                        image: asset_server.load("icons/content-copy.png").into(),
+                                        ..default()
+                                    });
+                                });
+                        });
+                });
+        });
 }

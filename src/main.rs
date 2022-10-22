@@ -105,8 +105,8 @@ fn create_room(app_id: &str, token: &str) -> Result<String, Box<dyn std::error::
 fn main() {
     let args = Args::parse();
 
-    // let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
-    let app_id = "app-e623314c-c28b-4c9c-a623-c02c7efc25c6";
+    let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
+    // let app_id = "app-e623314c-c28b-4c9c-a623-c02c7efc25c6";
     let login_result = login(app_id);
     let login_response = login_result.expect("Logging in should succeed");
 
@@ -115,7 +115,7 @@ fn main() {
         match create_room(app_id, &login_response.token) {
             Ok(create_response) => Some(create_response),
             Err(e) => {
-                error!("Failed to create a room. Error was {}", e);
+                dbg!("Failed to create a room. Error was {}", e);
                 None
             }
         }

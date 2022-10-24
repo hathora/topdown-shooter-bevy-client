@@ -407,29 +407,31 @@ fn write_inputs(
 
     debug!("Processing keyboard input");
 
-    let mut keyboard_update_necessary = false;
-    let mut direction = 0;
+    if input.any_just_released([KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D])
+        || input.any_just_pressed([KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D])
+    {
+        let mut direction = 0;
 
-    if input.any_just_released([KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D]) {
-        keyboard_update_necessary = true;
-    }
+        if input.pressed(KeyCode::W) {
+            direction = 1
+        } else if input.pressed(KeyCode::S) {
+            direction = 2;
+        } else if input.pressed(KeyCode::A) {
+            direction = 3;
+        } else if input.pressed(KeyCode::D) {
+            direction = 4;
+        }
 
-    if input.just_pressed(KeyCode::W) {
-        keyboard_update_necessary = true;
-        direction = 1
-    } else if input.just_pressed(KeyCode::S) {
-        keyboard_update_necessary = true;
-        direction = 2;
-    } else if input.just_pressed(KeyCode::A) {
-        keyboard_update_necessary = true;
-        direction = 3;
-    } else if input.just_pressed(KeyCode::D) {
-        keyboard_update_necessary = true;
-        direction = 4;
-    }
+        if input.just_pressed(KeyCode::W) {
+            direction = 1
+        } else if input.just_pressed(KeyCode::S) {
+            direction = 2;
+        } else if input.just_pressed(KeyCode::A) {
+            direction = 3;
+        } else if input.just_pressed(KeyCode::D) {
+            direction = 4;
+        }
 
-    if keyboard_update_necessary {
-        debug!("Writing input");
         let input = MoveInput {
             serialized_type: 0,
             direction,

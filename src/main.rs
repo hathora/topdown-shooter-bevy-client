@@ -147,7 +147,13 @@ fn main() {
     }
 
     App::new()
-        .add_plugins(DefaultPlugins)
+        .insert_resource(WindowDescriptor {
+            title: "bevy-topdown-shooter".to_string(),
+            width: 800.,
+            height: 600.,
+            ..default()
+        })
+        .add_plugins_with(DefaultPlugins, |group| group)
         .add_asset::<Map>()
         .init_asset_loader::<MapLoader>()
         .insert_resource(socket)
@@ -213,6 +219,9 @@ fn read_from_server(
 
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+
+    loaded_map: ResMut<LoadedMap>,
+    map_assets: ResMut<Assets<Map>>,
 ) {
     match socket.read_message() {
         Ok(msg) => {
@@ -246,8 +255,7 @@ fn read_from_server(
                             }
 
                             if &user_id.0 == &client_user_id.0 {
-                                for (_camera, mut camera_transform) in &mut camera_query {
-                                    debug!("Player transform is {}", player_transform.translation);
+                                for (camera, mut camera_transform) in &mut camera_query {
                                     *camera_transform = Transform {
                                         translation: Vec3::new(
                                             player_transform.translation.x,
@@ -256,6 +264,48 @@ fn read_from_server(
                                         ),
                                         ..*camera_transform
                                     };
+
+                                    let min_gpu = Vec3::splat(-1.);
+                                    let to_world = camera_transform.compute_matrix()
+                                        * camera.projection_matrix().inverse();
+                                    let camera_min = to_world.project_point3(min_gpu);
+                                    dbg!(camera_min);
+
+                                    let max_gpu = Vec3::splat(1.);
+                                    let camera_max = to_world.project_point3(max_gpu);
+                                    dbg!(camera_max);
+
+
+                                    if let Some(map) = map_assets.get(&loaded_map.0) {
+                                        let map_min_x = (map.tileSize * map.left) as f32;
+                                        let map_max_x = (map.tileSize * map.right) as f32;
+
+                                        if (camera_min.x) < map_min_x {
+                                            camera_transform.translation.x +=
+                                                map_min_x - camera_min.x;
+                                        }
+                                        if (camera_max.x) > map_max_x {
+                                            camera_transform.translation.x -=
+                                                (camera_max.x) - map_max_x;
+                                        }
+
+                                        // x = x.clamp(
+                                        //     (map.tileSize * map.left) as f32,
+                                        //     (map.tileSize * map.right) as f32,
+                                        // );
+                                        // y = y.clamp(
+                                        //     (map.tileSize * map.bottom) as f32,
+                                        //     (map.tileSize * map.bottom) as f32,
+                                        // );
+
+                                        // info!(
+                                        //     "Using map to bound camera: {},{} to {},{}",
+                                        //     player_transform.translation.x,
+                                        //     player_transform.translation.y,
+                                        //     x,
+                                        //     y
+                                        // );
+                                    }
                                 }
                             }
 
@@ -406,7 +456,6 @@ fn write_inputs(
     }
 
     debug!("Processing keyboard input");
-
     if input.any_just_released([KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D])
         || input.any_just_pressed([KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D])
     {
@@ -475,7 +524,7 @@ fn write_inputs(
             // reduce it to a 2D value
             let world_pos: Vec2 = world_pos.truncate();
 
-            debug!("Mouse coords: {}/{}", world_pos.x, world_pos.y);
+            info!("Mouse coords: {}/{}", world_pos.x, world_pos.y);
 
             for (_, player_transform) in query.iter() {
                 let angle =

@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy::reflect::TypeUuid;
 use bevy::render::camera::RenderTarget;
 
-use bevy::render::texture::ImageSampler;
+
 use clap::Parser;
 use clipboard::{ClipboardContext, ClipboardProvider};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};

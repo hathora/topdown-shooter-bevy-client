@@ -265,46 +265,34 @@ fn read_from_server(
                                         ..*camera_transform
                                     };
 
-                                    let min_gpu = Vec3::splat(-1.);
-                                    let to_world = camera_transform.compute_matrix()
-                                        * camera.projection_matrix().inverse();
-                                    let camera_min = to_world.project_point3(min_gpu);
-                                    dbg!(camera_min);
-
-                                    let max_gpu = Vec3::splat(1.);
-                                    let camera_max = to_world.project_point3(max_gpu);
-                                    dbg!(camera_max);
-
-
                                     if let Some(map) = map_assets.get(&loaded_map.0) {
-                                        let map_min_x = (map.tileSize * map.left) as f32;
-                                        let map_max_x = (map.tileSize * map.right) as f32;
+                                        let min_gpu = Vec3::splat(-1.);
+                                        let to_world = camera_transform.compute_matrix()
+                                            * camera.projection_matrix().inverse();
+                                        let camera_min = to_world.project_point3(min_gpu);
+                                        let max_gpu = Vec3::splat(1.);
+                                        let camera_max = to_world.project_point3(max_gpu);
 
+                                        let map_min_x = (map.tileSize * map.left) as f32;
                                         if (camera_min.x) < map_min_x {
                                             camera_transform.translation.x +=
                                                 map_min_x - camera_min.x;
                                         }
+                                        let map_max_x = (map.tileSize * map.right) as f32;
                                         if (camera_max.x) > map_max_x {
                                             camera_transform.translation.x -=
                                                 (camera_max.x) - map_max_x;
                                         }
-
-                                        // x = x.clamp(
-                                        //     (map.tileSize * map.left) as f32,
-                                        //     (map.tileSize * map.right) as f32,
-                                        // );
-                                        // y = y.clamp(
-                                        //     (map.tileSize * map.bottom) as f32,
-                                        //     (map.tileSize * map.bottom) as f32,
-                                        // );
-
-                                        // info!(
-                                        //     "Using map to bound camera: {},{} to {},{}",
-                                        //     player_transform.translation.x,
-                                        //     player_transform.translation.y,
-                                        //     x,
-                                        //     y
-                                        // );
+                                        let map_min_y = -(map.tileSize * map.bottom) as f32;
+                                        if (camera_min.y) < map_min_y {
+                                            camera_transform.translation.y +=
+                                                map_min_y - camera_min.y;
+                                        }
+                                        let map_max_y = -(map.tileSize * map.top) as f32;
+                                        if (camera_max.y) > map_max_y {
+                                            camera_transform.translation.y +=
+                                                map_max_y - camera_max.y;
+                                        }
                                     }
                                 }
                             }

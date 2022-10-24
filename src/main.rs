@@ -4,7 +4,6 @@ use bevy::prelude::*;
 use bevy::reflect::TypeUuid;
 use bevy::render::camera::RenderTarget;
 
-
 use clap::Parser;
 use clipboard::{ClipboardContext, ClipboardProvider};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -123,34 +122,25 @@ fn main() {
 
     let room_id = room_id.expect("Room ID exists");
 
-    dbg!(&room_id);
-
     let user_id = decode_user_id_without_validating_jwt(&login_response.token)
         .expect("Decoding JWT should succeed");
 
     let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
-    let (mut socket, response) =
+    let (mut socket, _response) =
         connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect to websockets");
-
-    dbg!(response);
 
     let initial_state = InitialState {
         token: login_response.token,
         stateId: room_id.to_owned(),
     };
     let message = serde_json::to_string(&initial_state).expect("Serialization should work");
-    // dbg!("{}", &message);
     use encoding::Encoding;
     let bytes = encoding::all::UTF_8
         .encode(&message, encoding::EncoderTrap::Strict)
         .expect("utf8 encoding");
 
-    // dbg!("{}", &bytes);
-
     match socket.write_message(Message::binary(bytes)) {
-        Ok(_) => {
-            dbg!("Successfully connected to websocket.");
-        }
+        Ok(_) => {}
         Err(e) => {
             dbg!("Failed to connect to websocket. Error was {}", e);
         }
@@ -570,7 +560,7 @@ fn draw_map(
 
     let map = map_asset.expect("Verified that map isn't None");
 
-    info!("Custom asset loaded: {:?}", map);
+    debug!("Custom asset loaded: {:?}", map);
     loaded_map.1 = true;
 
     for wall in &map.walls {
@@ -677,20 +667,19 @@ const PRESSED_BUTTON: Color = Color::WHITE;
 
 fn copy_room_id(mut interaction_query: Query<(&Interaction, &mut UiColor)>, room_id: Res<RoomId>) {
     for (interaction, mut color) in &mut interaction_query {
-        info!("{:?}", interaction);
         match *interaction {
             Interaction::Clicked => {
-                info!("Button clicked");
+                debug!("Button clicked");
                 let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
                 ctx.set_contents(room_id.0.to_owned()).unwrap();
                 *color = PRESSED_BUTTON.into();
             }
             Interaction::Hovered => {
-                info!("Button clicked");
+                debug!("Button clicked");
                 *color = HOVERED_BUTTON.into();
             }
             Interaction::None => {
-                info!("No interaction");
+                debug!("No interaction");
                 *color = NORMAL_BUTTON.into();
             }
         }

@@ -174,9 +174,10 @@ fn main() {
 
     App::new()
         .insert_resource(WindowDescriptor {
-            title: "bevy-topdown-shooter".to_string(),
             width: 800.,
             height: 600.,
+            title: "bevy-topdown-shooter".to_string(),
+            resizable: false,
             ..default()
         })
         .add_plugins(DefaultPlugins)
@@ -427,15 +428,6 @@ fn write_inputs(
 
     mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
 ) {
-    if mouse_button_input.just_pressed(MouseButton::Left) {
-        debug!("Mouse clicked.");
-        let mouse_input = ClickInput { serialized_type: 2 };
-        let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
-        if let Err(e) = socket.write_message(Message::Binary(message)) {
-            warn!("Socket failed to write, error was {}", e);
-        }
-    }
-
     debug!("Processing keyboard input");
     if input.any_just_released([KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D])
         || input.any_just_pressed([KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D])
@@ -468,6 +460,15 @@ fn write_inputs(
         };
 
         let message = serde_json::to_vec(&input).expect("Serialization should work");
+        if let Err(e) = socket.write_message(Message::Binary(message)) {
+            warn!("Socket failed to write, error was {}", e);
+        }
+    }
+
+    if mouse_button_input.just_pressed(MouseButton::Left) {
+        debug!("Mouse clicked.");
+        let mouse_input = ClickInput { serialized_type: 2 };
+        let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
         if let Err(e) = socket.write_message(Message::Binary(message)) {
             warn!("Socket failed to write, error was {}", e);
         }
@@ -716,7 +717,7 @@ fn copy_room_id(mut interaction_query: Query<(&Interaction, &mut UiColor)>, room
     }
 }
 
-const LAMBDA: f32 = 0.1;
+const LAMBDA: f32 = 1.;
 
 fn update_position_from_interpolation_buffer(
     mut player_buffer_query: Query<

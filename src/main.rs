@@ -186,12 +186,15 @@ fn main() {
         .add_startup_system(setup_camera)
         .add_startup_system(display_room_id)
         .add_startup_system(load_map)
-        .add_system(draw_map)
-        .add_system(copy_room_id)
-        .add_system(read_from_server)
-        .add_system(update_position_from_interpolation_buffer)
-        .add_system(write_inputs)
+        // general systems
         .add_system(bevy::window::close_on_esc)
+        .add_system(draw_map)
+        .add_system(copy_room_id_button)
+        // game state systems
+        .add_system(read_from_server)
+        .add_system(update_position_from_interpolation_buffer.after(read_from_server))
+        .add_system(write_inputs.after(read_from_server))
+        .add_system(update_camera.after(update_position_from_interpolation_buffer))
         .run();
 }
 
@@ -231,7 +234,6 @@ struct UpdateMessage {
 fn read_from_server(
     mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
     client_user_id: Res<UserId>,
-    mut camera_query: Query<(&Camera, &mut Transform), (Without<UserId>, Without<BulletComponent>)>,
     mut player_query: Query<
         (Entity, &UserId, &mut InterpolationBuffer),
         (Without<Camera>, Without<BulletComponent>),
@@ -243,9 +245,6 @@ fn read_from_server(
 
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-
-    loaded_map: ResMut<LoadedMap>,
-    map_assets: ResMut<Assets<Map>>,
 ) {
     match socket.read_message() {
         Ok(msg) => {
@@ -680,7 +679,10 @@ const NORMAL_BUTTON: Color = Color::rgb(0.80, 0.80, 0.80);
 const HOVERED_BUTTON: Color = Color::rgb(0.90, 0.90, 0.90);
 const PRESSED_BUTTON: Color = Color::WHITE;
 
-fn copy_room_id(mut interaction_query: Query<(&Interaction, &mut UiColor)>, room_id: Res<RoomId>) {
+fn copy_room_id_button(
+    mut interaction_query: Query<(&Interaction, &mut UiColor)>,
+    room_id: Res<RoomId>,
+) {
     for (interaction, mut color) in &mut interaction_query {
         match *interaction {
             Interaction::Clicked => {
@@ -712,13 +714,8 @@ fn update_position_from_interpolation_buffer(
         (&mut InterpolationBuffer, &mut Transform),
         (With<BulletComponent>, Without<UserId>),
     >,
-    mut camera_query: Query<(&Camera, &mut Transform), (Without<UserId>, Without<BulletComponent>)>,
-
-    map_assets: ResMut<Assets<Map>>,
-    loaded_map: ResMut<LoadedMap>,
 
     time: Res<Time>,
-    client_user_id: Res<UserId>,
 ) {
     let delta = (LAMBDA * time.delta_seconds()).max(1.0);
 
@@ -740,45 +737,6 @@ fn update_position_from_interpolation_buffer(
             {
                 debug!("Done processing update");
                 buffer.0.pop_front();
-            }
-
-            if &user_id.0 == &client_user_id.0 {
-                for (camera, mut camera_transform) in &mut camera_query {
-                    *camera_transform = Transform {
-                        translation: Vec3::new(
-                            player_transform.translation.x,
-                            player_transform.translation.y,
-                            camera_transform.translation.z,
-                        ),
-                        ..*camera_transform
-                    };
-
-                    if let Some(map) = map_assets.get(&loaded_map.0) {
-                        let min_gpu = Vec3::splat(-1.);
-                        let to_world = camera_transform.compute_matrix()
-                            * camera.projection_matrix().inverse();
-                        let camera_min = to_world.project_point3(min_gpu);
-                        let max_gpu = Vec3::splat(1.);
-                        let camera_max = to_world.project_point3(max_gpu);
-
-                        let map_min_x = (map.tileSize * map.left) as f32;
-                        if (camera_min.x) < map_min_x {
-                            camera_transform.translation.x += map_min_x - camera_min.x;
-                        }
-                        let map_max_x = (map.tileSize * map.right) as f32;
-                        if (camera_max.x) > map_max_x {
-                            camera_transform.translation.x -= (camera_max.x) - map_max_x;
-                        }
-                        let map_min_y = -(map.tileSize * map.bottom) as f32;
-                        if (camera_min.y) < map_min_y {
-                            camera_transform.translation.y += map_min_y - camera_min.y;
-                        }
-                        let map_max_y = -(map.tileSize * map.top) as f32;
-                        if (camera_max.y) > map_max_y {
-                            camera_transform.translation.y += map_max_y - camera_max.y;
-                        }
-                    }
-                }
             }
         }
     }
@@ -802,6 +760,46 @@ fn update_position_from_interpolation_buffer(
                 debug!("Done processing update");
                 buffer.0.pop_front();
             }
+        }
+    }
+}
+
+fn update_camera(
+    current_player_query: Query<&Transform, (With<CurrentPlayer>, Without<Camera>)>,
+    mut camera_query: Query<(&Camera, &mut Transform), (With<Camera>, Without<CurrentPlayer>)>,
+
+    map_assets: ResMut<Assets<Map>>,
+    loaded_map: ResMut<LoadedMap>,
+) {
+    let (camera, mut camera_transform) = camera_query.single_mut();
+
+    // can't use single here; CurrentPlayer might not have spawned yet
+    for player_transform in &current_player_query {
+        camera_transform.translation = player_transform.translation;
+    }
+
+    if let Some(map) = map_assets.get(&loaded_map.0) {
+        let min_gpu = Vec3::splat(-1.);
+        let to_world = camera_transform.compute_matrix() * camera.projection_matrix().inverse();
+        let camera_min = to_world.project_point3(min_gpu);
+        let max_gpu = Vec3::splat(1.);
+        let camera_max = to_world.project_point3(max_gpu);
+
+        let map_min_x = (map.tileSize * map.left) as f32;
+        if (camera_min.x) < map_min_x {
+            camera_transform.translation.x += map_min_x - camera_min.x;
+        }
+        let map_max_x = (map.tileSize * map.right) as f32;
+        if (camera_max.x) > map_max_x {
+            camera_transform.translation.x -= (camera_max.x) - map_max_x;
+        }
+        let map_min_y = -(map.tileSize * map.bottom) as f32;
+        if (camera_min.y) < map_min_y {
+            camera_transform.translation.y += map_min_y - camera_min.y;
+        }
+        let map_max_y = -(map.tileSize * map.top) as f32;
+        if (camera_max.y) > map_max_y {
+            camera_transform.translation.y += map_max_y - camera_max.y;
         }
     }
 }

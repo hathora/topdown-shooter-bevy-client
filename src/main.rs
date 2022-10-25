@@ -706,20 +706,16 @@ fn copy_room_id_button(
 const LAMBDA: f32 = 1.;
 
 fn update_position_from_interpolation_buffer(
-    mut player_buffer_query: Query<
-        (&mut InterpolationBuffer, &mut Transform, &UserId),
-        Without<BulletComponent>,
-    >,
-    mut bullet_buffer_query: Query<
+    mut buffer_query: Query<
         (&mut InterpolationBuffer, &mut Transform),
-        (With<BulletComponent>, Without<UserId>),
+        Without<BulletComponent>,
     >,
 
     time: Res<Time>,
 ) {
     let delta = (LAMBDA * time.delta_seconds()).max(1.0);
 
-    for (mut buffer, mut player_transform, user_id) in &mut player_buffer_query {
+    for (mut buffer, mut player_transform) in &mut buffer_query {
         if let Some(updated_position) = buffer.0.get(0) {
             debug!("Updating position by {}", delta);
             player_transform.translation = player_transform
@@ -731,28 +727,6 @@ fn update_position_from_interpolation_buffer(
                 .lerp(updated_position.rotation, delta);
 
             if player_transform
-                .translation
-                .distance(updated_position.translation)
-                < f32::EPSILON
-            {
-                debug!("Done processing update");
-                buffer.0.pop_front();
-            }
-        }
-    }
-
-    for (mut buffer, mut bullet_transform) in &mut bullet_buffer_query {
-        if let Some(updated_position) = buffer.0.get(0) {
-            debug!("Updating position by {}", delta);
-            bullet_transform.translation = bullet_transform
-                .translation
-                .lerp(updated_position.translation, delta);
-
-            bullet_transform.rotation = bullet_transform
-                .rotation
-                .lerp(updated_position.rotation, delta);
-
-            if bullet_transform
                 .translation
                 .distance(updated_position.translation)
                 < f32::EPSILON

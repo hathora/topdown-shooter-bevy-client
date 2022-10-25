@@ -716,10 +716,17 @@ fn copy_room_id(mut interaction_query: Query<(&Interaction, &mut UiColor)>, room
     }
 }
 
-const LAMBDA: f32 = 0.01;
+const LAMBDA: f32 = 0.1;
 
 fn update_position_from_interpolation_buffer(
-    mut buffer_query: Query<(&mut InterpolationBuffer, &mut Transform, &UserId)>,
+    mut player_buffer_query: Query<
+        (&mut InterpolationBuffer, &mut Transform, &UserId),
+        Without<BulletComponent>,
+    >,
+    mut bullet_buffer_query: Query<
+        (&mut InterpolationBuffer, &mut Transform),
+        (With<BulletComponent>, Without<UserId>),
+    >,
     mut camera_query: Query<(&Camera, &mut Transform), (Without<UserId>, Without<BulletComponent>)>,
 
     map_assets: ResMut<Assets<Map>>,
@@ -728,13 +735,18 @@ fn update_position_from_interpolation_buffer(
     time: Res<Time>,
     client_user_id: Res<UserId>,
 ) {
-    for (mut buffer, mut player_transform, user_id) in &mut buffer_query {
+    let delta = (LAMBDA * time.delta_seconds()).max(1.0);
+
+    for (mut buffer, mut player_transform, user_id) in &mut player_buffer_query {
         if let Some(updated_position) = buffer.0.get(0) {
-            let last_translation = player_transform.translation;
-            let delta = (LAMBDA * time.delta_seconds()).max(1.0)
-                * (updated_position.translation - last_translation);
             debug!("Updating position by {}", delta);
-            player_transform.translation += delta;
+            player_transform.translation = player_transform
+                .translation
+                .lerp(updated_position.translation, delta);
+
+            player_transform.rotation = player_transform
+                .rotation
+                .lerp(updated_position.rotation, delta);
 
             if player_transform
                 .translation
@@ -782,6 +794,28 @@ fn update_position_from_interpolation_buffer(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    for (mut buffer, mut bullet_transform) in &mut bullet_buffer_query {
+        if let Some(updated_position) = buffer.0.get(0) {
+            debug!("Updating position by {}", delta);
+            bullet_transform.translation = bullet_transform
+                .translation
+                .lerp(updated_position.translation, delta);
+
+            bullet_transform.rotation = bullet_transform
+                .rotation
+                .lerp(updated_position.rotation, delta);
+
+            if bullet_transform
+                .translation
+                .distance(updated_position.translation)
+                < f32::EPSILON
+            {
+                debug!("Done processing update");
+                buffer.0.pop_front();
             }
         }
     }

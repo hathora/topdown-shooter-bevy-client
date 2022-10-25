@@ -91,7 +91,6 @@ fn log_in_and_set_up_websocket(provided_room_id: Res<Option<String>>, mut comman
     });
     let room_id = room_id.expect("Room ID exists");
     commands.insert_resource(RoomId(room_id.to_owned()));
-    info!("Inserted room");
 
     let user_id = decode_user_id_without_validating_jwt(&login_response.token)
         .expect("Decoding JWT should succeed");
@@ -132,7 +131,6 @@ fn log_in_and_set_up_websocket(provided_room_id: Res<Option<String>>, mut comman
         }
     }
     commands.insert_resource(socket);
-    info!("done logging in");
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -597,7 +595,6 @@ fn draw_map(
 const CLEAR: UiColor = UiColor(Color::rgba(0.0, 0.0, 0.0, 0.0));
 
 fn display_room_id(asset_server: Res<AssetServer>, mut commands: Commands, room_id: Res<RoomId>) {
-    info!("displaying room");
     commands
         .spawn_bundle(NodeBundle {
             style: Style {

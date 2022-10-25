@@ -616,6 +616,8 @@ fn draw_map(
     }
 }
 
+const CLEAR: UiColor = UiColor(Color::rgba(0.0, 0.0, 0.0, 0.0));
+
 fn display_room_id(asset_server: Res<AssetServer>, mut commands: Commands, room_id: Res<RoomId>) {
     commands
         .spawn_bundle(NodeBundle {
@@ -632,11 +634,10 @@ fn display_room_id(asset_server: Res<AssetServer>, mut commands: Commands, room_
             parent
                 .spawn_bundle(NodeBundle {
                     style: Style {
-                        size: Size::new(Val::Px(600.0), Val::Px(100.0)),
-                        border: UiRect::all(Val::Px(2.0)),
+                        size: Size::new(Val::Px(500.0), Val::Px(100.0)),
                         ..default()
                     },
-                    color: Color::rgb(0.65, 0.65, 0.65).into(),
+                    color: CLEAR,
                     ..default()
                 })
                 .with_children(|parent| {
@@ -644,11 +645,10 @@ fn display_room_id(asset_server: Res<AssetServer>, mut commands: Commands, room_
                     parent
                         .spawn_bundle(NodeBundle {
                             style: Style {
-                                size: Size::new(Val::Percent(80.0), Val::Percent(100.0)),
-                                align_items: AlignItems::FlexEnd,
+                                size: Size::new(Val::Px(490.0), Val::Percent(100.0)),
                                 ..default()
                             },
-                            color: Color::rgb(0.15, 0.15, 0.15).into(),
+                            color: CLEAR,
                             ..default()
                         })
                         .with_children(|parent| {
@@ -672,12 +672,7 @@ fn display_room_id(asset_server: Res<AssetServer>, mut commands: Commands, room_
                             parent.spawn_bundle(ButtonBundle {
                                 style: Style {
                                     size: Size::new(Val::Px(50.0), Val::Px(50.0)),
-                                    // center button
                                     margin: UiRect::all(Val::Auto),
-                                    // horizontally center child text
-                                    // justify_content: JustifyContent::Center,
-                                    // vertically center child text
-                                    // align_items: AlignItems::Center,
                                     ..default()
                                 },
                                 image: asset_server.load("icons/content-copy.png").into(),

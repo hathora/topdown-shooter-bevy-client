@@ -108,7 +108,6 @@ fn main() {
     let args = Args::parse();
 
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
-    // let app_id = "app-e623314c-c28b-4c9c-a623-c02c7efc25c6";
     let login_result = login(app_id);
     let login_response = login_result.expect("Logging in should succeed");
 
@@ -185,7 +184,6 @@ fn main() {
         .insert_resource(socket)
         .insert_resource(UserId(user_id))
         .insert_resource(RoomId(room_id))
-        .insert_resource(MouseLocation(Vec2::ZERO))
         .add_startup_system(setup_camera)
         .add_startup_system(display_room_id)
         .add_startup_system(load_map)
@@ -411,7 +409,6 @@ struct ClickInput {
     serialized_type: u64,
 }
 
-struct MouseLocation(Vec2);
 
 fn write_inputs(
     input: Res<Input<KeyCode>>,
@@ -419,7 +416,6 @@ fn write_inputs(
     // need to get window dimensions
     wnds: Res<Windows>,
     q_camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    mut mouse_location: ResMut<MouseLocation>,
     mouse_motion_events: EventReader<MouseMotion>,
     mouse_button_input: Res<Input<MouseButton>>,
 
@@ -518,9 +514,6 @@ fn write_inputs(
                     warn!("Socket failed to write, error was {}", e);
                 }
             }
-
-            // todo: remove this
-            *mouse_location = MouseLocation(world_pos);
         }
     }
 }

@@ -191,7 +191,11 @@ fn main() {
         // game state systems
         .add_system(read_from_server)
         .add_system(update_position_from_interpolation_buffer.after(read_from_server))
-        .add_system(write_inputs.after(read_from_server))
+        .add_system(
+            write_inputs
+                .after(read_from_server)
+                .after(copy_room_id_button),
+        )
         .add_system(update_camera.after(update_position_from_interpolation_buffer))
         .run();
 }
@@ -295,7 +299,6 @@ fn read_from_server(
                                     .insert(UserId(player_update.id.clone()))
                                     .insert_bundle(SpriteBundle {
                                         texture: asset_server.load("sprites/player.png"),
-                                        // TODO: update angle
                                         transform: Transform {
                                             translation: Vec3::new(
                                                 player_update.position.x,
@@ -347,7 +350,6 @@ fn read_from_server(
                                     .insert(BulletComponent(bullet_update.id))
                                     .insert_bundle(SpriteBundle {
                                         texture: asset_server.load("sprites/bullet.png"),
-                                        // TODO: update angle
                                         transform: Transform {
                                             translation: Vec3::new(
                                                 bullet_update.position.x,
@@ -666,12 +668,14 @@ const PRESSED_BUTTON: Color = Color::WHITE;
 
 fn copy_room_id_button(
     mut interaction_query: Query<(&Interaction, &mut UiColor)>,
+    mut mouse_button_input: ResMut<Input<MouseButton>>,
     room_id: Res<RoomId>,
 ) {
     for (interaction, mut color) in &mut interaction_query {
         match *interaction {
             Interaction::Clicked => {
                 debug!("Button clicked");
+                mouse_button_input.clear_just_pressed(MouseButton::Left);
                 let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
                 ctx.set_contents(room_id.0.to_owned()).unwrap();
                 *color = PRESSED_BUTTON.into();

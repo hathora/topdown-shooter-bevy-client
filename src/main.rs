@@ -101,7 +101,7 @@ fn log_in_and_set_up_websocket(provided_room_id: Res<Option<String>>, mut comman
         connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect to websockets");
     let initial_state = InitialState {
         token: login_response.token,
-        stateId: room_id.to_owned(),
+        stateId: room_id,
     };
     let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
     match socket.write_message(Message::binary(message)) {
@@ -313,7 +313,7 @@ fn read_from_server(
                                     })
                                     .insert(InterpolationBuffer(VecDeque::new()));
 
-                                if &player_update.id == &client_user_id.0 {
+                                if player_update.id == client_user_id.0 {
                                     entity.insert(CurrentPlayer);
                                 }
                             }

@@ -74,6 +74,67 @@ struct MainCamera;
 #[derive(Component)]
 struct InterpolationBuffer(VecDeque<Transform>);
 
+fn log_in_and_set_up_websocket(provided_room_id: Res<Option<String>>, mut commands: Commands) {
+    let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
+    let login_result = login(app_id);
+    let login_response = login_result.expect("Logging in should succeed");
+
+    let room_id = provided_room_id.clone().or_else(|| {
+        debug!("No room provided, creating one");
+        match create_room(app_id, &login_response.token) {
+            Ok(create_response) => Some(create_response),
+            Err(e) => {
+                error!("Failed to create a room. Error was {}", e);
+                None
+            }
+        }
+    });
+    let room_id = room_id.expect("Room ID exists");
+    commands.insert_resource(RoomId(room_id.to_owned()));
+    info!("Inserted room");
+
+    let user_id = decode_user_id_without_validating_jwt(&login_response.token)
+        .expect("Decoding JWT should succeed");
+    commands.insert_resource(UserId(user_id));
+    let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
+    let (mut socket, _response) =
+        connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect to websockets");
+    let initial_state = InitialState {
+        token: login_response.token,
+        stateId: room_id.to_owned(),
+    };
+    let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
+    match socket.write_message(Message::binary(message)) {
+        Ok(_) => {}
+        Err(e) => {
+            error!("Failed to connect to websocket. Error was {}", e);
+        }
+    }
+    match socket.get_mut() {
+        MaybeTlsStream::Plain(stream) => {
+            if let Err(e) = stream.set_nonblocking(true) {
+                warn!(
+                    "Error setting nonblocking. Using blocking websocket. Error was {}",
+                    e
+                );
+            }
+        }
+        MaybeTlsStream::NativeTls(tls_stream) => {
+            if let Err(e) = tls_stream.get_mut().set_nonblocking(true) {
+                warn!(
+                    "Error setting nonblocking. Using blocking websocket. Error was {}",
+                    e
+                );
+            }
+        }
+        _ => {
+            info!("Using unrecognized socket type. Using blocking websocket.");
+        }
+    }
+    commands.insert_resource(socket);
+    info!("done logging in");
+}
+
 fn setup_camera(mut commands: Commands) {
     commands
         .spawn_bundle(Camera2dBundle::default())
@@ -107,69 +168,6 @@ fn create_room(app_id: &str, token: &str) -> Result<String, Box<dyn std::error::
 fn main() {
     let args = Args::parse();
 
-    let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
-    let login_result = login(app_id);
-    let login_response = login_result.expect("Logging in should succeed");
-
-    let room_id = args.room_id.or_else(|| {
-        dbg!("No room provided, creating one");
-        match create_room(app_id, &login_response.token) {
-            Ok(create_response) => Some(create_response),
-            Err(e) => {
-                dbg!("Failed to create a room. Error was {}", e);
-                None
-            }
-        }
-    });
-
-    let room_id = room_id.expect("Room ID exists");
-
-    let user_id = decode_user_id_without_validating_jwt(&login_response.token)
-        .expect("Decoding JWT should succeed");
-
-    let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
-    let (mut socket, _response) =
-        connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect to websockets");
-
-    let initial_state = InitialState {
-        token: login_response.token,
-        stateId: room_id.to_owned(),
-    };
-    let message = serde_json::to_string(&initial_state).expect("Serialization should work");
-    use encoding::Encoding;
-    let bytes = encoding::all::UTF_8
-        .encode(&message, encoding::EncoderTrap::Strict)
-        .expect("utf8 encoding");
-
-    match socket.write_message(Message::binary(bytes)) {
-        Ok(_) => {}
-        Err(e) => {
-            dbg!("Failed to connect to websocket. Error was {}", e);
-        }
-    }
-
-    match socket.get_mut() {
-        MaybeTlsStream::Plain(stream) => {
-            if let Err(e) = stream.set_nonblocking(true) {
-                warn!(
-                    "Error setting nonblocking. Using blocking websocket. Error was {}",
-                    e
-                );
-            }
-        }
-        MaybeTlsStream::NativeTls(tls_stream) => {
-            if let Err(e) = tls_stream.get_mut().set_nonblocking(true) {
-                warn!(
-                    "Error setting nonblocking. Using blocking websocket. Error was {}",
-                    e
-                );
-            }
-        }
-        _ => {
-            info!("Using unrecognized socket type. Using blocking websocket.");
-        }
-    }
-
     App::new()
         .insert_resource(WindowDescriptor {
             width: 800.,
@@ -181,18 +179,19 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_asset::<Map>()
         .init_asset_loader::<MapLoader>()
-        .insert_resource(socket)
-        .insert_resource(UserId(user_id))
-        .insert_resource(RoomId(room_id))
+        .insert_resource(args.room_id)
+        // This is exclusive so we can guarantee that the room is created before
+        // we render the room ID
+        .add_startup_system(log_in_and_set_up_websocket.exclusive_system())
         .add_startup_system(setup_camera)
         .add_startup_system(display_room_id)
         .add_startup_system(load_map)
         .add_system(draw_map)
-        .add_system(bevy::window::close_on_esc)
         .add_system(copy_room_id)
         .add_system(read_from_server)
         .add_system(update_position_from_interpolation_buffer)
         .add_system(write_inputs)
+        .add_system(bevy::window::close_on_esc)
         .run();
 }
 
@@ -409,7 +408,6 @@ struct ClickInput {
     serialized_type: u64,
 }
 
-
 fn write_inputs(
     input: Res<Input<KeyCode>>,
     query: Query<(&CurrentPlayer, &Transform)>,
@@ -612,6 +610,7 @@ fn draw_map(
 const CLEAR: UiColor = UiColor(Color::rgba(0.0, 0.0, 0.0, 0.0));
 
 fn display_room_id(asset_server: Res<AssetServer>, mut commands: Commands, room_id: Res<RoomId>) {
+    info!("displaying room");
     commands
         .spawn_bundle(NodeBundle {
             style: Style {

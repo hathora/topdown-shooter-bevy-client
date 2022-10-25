@@ -13,6 +13,7 @@ use std::collections::{HashSet, VecDeque};
 
 use std::iter::Iterator;
 use std::net::TcpStream;
+use std::time::Duration;
 
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
@@ -660,7 +661,11 @@ fn display_room_id(asset_server: Res<AssetServer>, mut commands: Commands, room_
                         });
                 });
         });
+
+    commands.insert_resource(ButtonTimer(Timer::new(Duration::from_secs(1), false)))
 }
+
+struct ButtonTimer(Timer);
 
 const NORMAL_BUTTON: Color = Color::rgb(0.80, 0.80, 0.80);
 const HOVERED_BUTTON: Color = Color::rgb(0.90, 0.90, 0.90);
@@ -668,8 +673,12 @@ const PRESSED_BUTTON: Color = Color::WHITE;
 
 fn copy_room_id_button(
     mut interaction_query: Query<(&Interaction, &mut UiColor)>,
+    mut text_query: Query<&mut Text>,
     mut mouse_button_input: ResMut<Input<MouseButton>>,
     room_id: Res<RoomId>,
+
+    mut button_timer: ResMut<ButtonTimer>,
+    mut time: Res<Time>,
 ) {
     for (interaction, mut color) in &mut interaction_query {
         match *interaction {
@@ -679,6 +688,9 @@ fn copy_room_id_button(
                 let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
                 ctx.set_contents(room_id.0.to_owned()).unwrap();
                 *color = PRESSED_BUTTON.into();
+
+                text_query.single_mut().sections[0].value = "Copied to clipboard".to_string();
+                button_timer.0.reset();
             }
             Interaction::Hovered => {
                 debug!("Button clicked");
@@ -689,6 +701,12 @@ fn copy_room_id_button(
                 *color = NORMAL_BUTTON.into();
             }
         }
+    }
+
+    button_timer.0.tick(time.delta());
+
+    if button_timer.0.finished() {
+        text_query.single_mut().sections[0].value = format!("Room ID: {}", room_id.0);
     }
 }
 

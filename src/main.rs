@@ -410,9 +410,8 @@ struct ClickInput {
 fn write_inputs(
     input: Res<Input<KeyCode>>,
     query: Query<(&CurrentPlayer, &Transform)>,
-    // need to get window dimensions
-    wnds: Res<Windows>,
-    q_camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    windows: Res<Windows>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mouse_motion_events: EventReader<MouseMotion>,
     mouse_button_input: Res<Input<MouseButton>>,
 
@@ -466,39 +465,28 @@ fn write_inputs(
 
     if !mouse_motion_events.is_empty() {
         debug!("Processing mouse input");
-
-        // get the camera info and transform
-        // assuming there is exactly one main camera entity, so query::single() is OK
-        let (camera, camera_transform) = q_camera.single();
-
-        // get the window that the camera is displaying to (or the primary window)
-        let wnd = if let RenderTarget::Window(id) = camera.target {
-            wnds.get(id).unwrap()
+        let (camera, camera_transform) = camera_query.single();
+        let window = if let RenderTarget::Window(id) = camera.target {
+            windows.get(id).unwrap()
         } else {
-            wnds.get_primary().unwrap()
+            windows.get_primary().unwrap()
         };
-
-        // check if the cursor is inside the window and get its position
-        if let Some(screen_pos) = wnd.cursor_position() {
-            // get the size of the window
-            let window_size = Vec2::new(wnd.width() as f32, wnd.height() as f32);
-
+        if let Some(cursor_screen_position) = window.cursor_position() {
+            let window_size = Vec2::new(window.width() as f32, window.height() as f32);
             // convert screen position [0..resolution] to ndc [-1..1] (gpu coordinates)
-            let ndc = (screen_pos / window_size) * 2.0 - Vec2::ONE;
-
+            let ndc = (cursor_screen_position / window_size) * 2.0 - Vec2::ONE;
             // matrix for undoing the projection and camera transform
             let ndc_to_world =
                 camera_transform.compute_matrix() * camera.projection_matrix().inverse();
-
             // use it to convert ndc to world-space coordinates
             let world_pos = ndc_to_world.project_point3(ndc.extend(-1.0));
 
             // reduce it to a 2D value
-            let world_pos: Vec2 = world_pos.truncate();
+            let cursor_world_position: Vec2 = world_pos.truncate();
 
             for (_, player_transform) in query.iter() {
-                let angle =
-                    (world_pos - player_transform.translation.truncate()).angle_between(Vec2::X);
+                let angle = (cursor_world_position - player_transform.translation.truncate())
+                    .angle_between(Vec2::X);
                 debug!("Angle {}", angle);
 
                 let mouse_input = AngleInput {
@@ -706,10 +694,7 @@ fn copy_room_id_button(
 const LAMBDA: f32 = 1.;
 
 fn update_position_from_interpolation_buffer(
-    mut buffer_query: Query<
-        (&mut InterpolationBuffer, &mut Transform),
-        Without<BulletComponent>,
-    >,
+    mut buffer_query: Query<(&mut InterpolationBuffer, &mut Transform), Without<BulletComponent>>,
 
     time: Res<Time>,
 ) {

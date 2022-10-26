@@ -586,7 +586,7 @@ fn copy_room_id_button(
     room_id: Res<RoomId>,
 
     mut button_timer: ResMut<ButtonTimer>,
-    mut time: Res<Time>,
+    time: Res<Time>,
 ) {
     for (interaction, mut color) in &mut interaction_query {
         match *interaction {

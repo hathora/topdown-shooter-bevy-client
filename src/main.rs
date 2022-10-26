@@ -17,6 +17,9 @@ use std::iter::Iterator;
 use std::net::TcpStream;
 use std::time::Duration;
 
+use bevy::asset::{AssetLoader, LoadedAsset};
+
+use crate::hathora::create_room;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
 
@@ -26,13 +29,16 @@ mod hathora;
 struct UserId(String);
 
 #[derive(Component)]
-struct BulletComponent(i32);
+struct BulletId(i32);
 
 #[derive(Component)]
 struct MainCamera;
 
 #[derive(Component)]
 struct InterpolationBuffer(VecDeque<Transform>);
+
+#[derive(Component)]
+struct CurrentPlayer;
 
 fn log_in_and_set_up_websocket(provided_room_id: Res<Option<String>>, mut commands: Commands) {
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
@@ -148,10 +154,10 @@ fn read_from_server(
     client_user_id: Res<UserId>,
     mut player_query: Query<
         (Entity, &UserId, &mut InterpolationBuffer),
-        (Without<Camera>, Without<BulletComponent>),
+        (Without<Camera>, Without<BulletId>),
     >,
     mut bullet_query: Query<
-        (Entity, &BulletComponent, &mut Transform),
+        (Entity, &BulletId, &mut Transform),
         (Without<Camera>, Without<UserId>),
     >,
 
@@ -257,7 +263,7 @@ fn read_from_server(
                                 debug!("Spawning bullet {}", bullet_update.id);
                                 commands
                                     .spawn()
-                                    .insert(BulletComponent(bullet_update.id))
+                                    .insert(BulletId(bullet_update.id))
                                     .insert_bundle(SpriteBundle {
                                         texture: asset_server.load("sprites/bullet.png"),
                                         transform: Transform {
@@ -293,9 +299,6 @@ fn read_from_server(
         }
     }
 }
-
-#[derive(Component)]
-struct CurrentPlayer;
 
 #[derive(Serialize)]
 struct MoveInput {
@@ -412,10 +415,6 @@ fn write_inputs(
         }
     }
 }
-
-use bevy::asset::{AssetLoader, LoadedAsset};
-
-use crate::hathora::create_room;
 
 #[derive(Default)]
 struct MapLoader {}
@@ -624,7 +623,7 @@ fn copy_room_id_button(
 const LAMBDA: f32 = 1.;
 
 fn update_position_from_interpolation_buffer(
-    mut buffer_query: Query<(&mut InterpolationBuffer, &mut Transform), Without<BulletComponent>>,
+    mut buffer_query: Query<(&mut InterpolationBuffer, &mut Transform), Without<BulletId>>,
 
     time: Res<Time>,
 ) {

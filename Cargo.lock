@@ -95,9 +95,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.65"
+version = "1.0.66"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98161a4e3e2184da77bb14f02184cdd111e83bbbcc9979dfee3c44b9a85f5602"
+checksum = "216261ddc8289130e551ddcd5ce8a064710c0d064a4d2895c67151c92b5443f6"
 
 [[package]]
 name = "approx"
@@ -1813,6 +1813,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "hathora-client-sdk"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20a943896221a8eaf2c80a053ed4a3f1e7a15bf62b39813984417d4d9c1fe3c0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tungstenite",
+ "url",
+]
+
+[[package]]
 name = "heck"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3366,6 +3381,7 @@ dependencies = [
  "bevy",
  "clap",
  "clipboard",
+ "hathora-client-sdk",
  "reqwest",
  "serde",
  "serde_json",

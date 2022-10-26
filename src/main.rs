@@ -6,10 +6,8 @@ use bevy::render::camera::RenderTarget;
 
 use clap::Parser;
 use clipboard::{ClipboardContext, ClipboardProvider};
-use hathora::{
-    create_nonblocking_subscribed_websocket, decode_user_id_without_validating_jwt, login_anonymous,
-};
 
+use hathora_client_sdk::{login_anonymous, create_room, decode_user_id_without_validating_jwt, create_nonblocking_subscribed_websocket};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 
@@ -19,11 +17,8 @@ use std::time::Duration;
 
 use bevy::asset::{AssetLoader, LoadedAsset};
 
-use crate::hathora::create_room;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
-
-mod hathora;
 
 #[derive(Component, Eq, PartialEq, Hash, Clone, Debug)]
 struct UserId(String);

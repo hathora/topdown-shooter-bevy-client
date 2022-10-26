@@ -1,6 +1,9 @@
 use std::net::TcpStream;
 
 use reqwest::Url;
+
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+
 use serde::{Deserialize, Serialize};
 use tungstenite::{connect, stream::MaybeTlsStream, Message, WebSocket};
 
@@ -16,7 +19,7 @@ struct CreateRoomResponse {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-struct LoginResponse {
+pub struct LoginResponse {
     pub token: String,
 }
 
@@ -26,10 +29,10 @@ struct Token {
 }
 
 #[derive(Debug)]
-struct TokenError;
+pub struct TokenError;
 
 #[derive(Debug)]
-struct WebSocketError;
+pub struct WebSocketError;
 
 pub fn login_anonymous(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
     let login_url = format!("https://coordinator.hathora.dev/{app_id}/login/anonymous");
@@ -64,7 +67,6 @@ pub fn create_nonblocking_subscribed_websocket(
         token: token.to_string(),
         stateId: room_id.to_string(),
     };
-
     let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
     match socket.write_message(Message::binary(message)) {
         Ok(_) => {}
@@ -89,4 +91,19 @@ pub fn create_nonblocking_subscribed_websocket(
         }
     }
     Ok(socket)
+}
+
+pub fn create_room(app_id: &str, token: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let client = reqwest::blocking::Client::new();
+    let create_url = format!("https://coordinator.hathora.dev/{app_id}/create");
+
+    let response: CreateRoomResponse = client
+        .post(create_url)
+        .header(AUTHORIZATION, token)
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(vec![])
+        .send()?
+        .json()?;
+
+    Ok(response.stateId)
 }

@@ -9,8 +9,7 @@ use clipboard::{ClipboardContext, ClipboardProvider};
 use hathora::{
     create_nonblocking_subscribed_websocket, decode_user_id_without_validating_jwt, login_anonymous,
 };
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use reqwest::Url;
+
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 
@@ -19,7 +18,7 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use tungstenite::stream::MaybeTlsStream;
-use tungstenite::{connect, Message, WebSocket};
+use tungstenite::{Message, WebSocket};
 
 mod hathora;
 
@@ -73,23 +72,6 @@ struct Args {
 }
 
 struct RoomId(String);
-
-fn create_room(app_id: &str, token: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let client = reqwest::blocking::Client::new();
-    let create_url = format!("https://coordinator.hathora.dev/{app_id}/create");
-
-    let response: CreateRoomResponse = client
-        .post(create_url)
-        .header(AUTHORIZATION, token)
-        .header(CONTENT_TYPE, "application/octet-stream")
-        .body(vec![])
-        .send()?
-        .json()?;
-
-    info!("Created room {}", response.stateId);
-
-    Ok(response.stateId)
-}
 
 fn main() {
     let args = Args::parse();
@@ -432,6 +414,8 @@ fn write_inputs(
 }
 
 use bevy::asset::{AssetLoader, LoadedAsset};
+
+use crate::hathora::create_room;
 
 #[derive(Default)]
 struct MapLoader {}

@@ -7,7 +7,10 @@ use bevy::render::camera::RenderTarget;
 use clap::Parser;
 use clipboard::{ClipboardContext, ClipboardProvider};
 
-use hathora_client_sdk::{login_anonymous, create_room, decode_user_id_without_validating_jwt, create_nonblocking_subscribed_websocket};
+use hathora_client_sdk::{
+    create_nonblocking_subscribed_websocket, create_room, decode_user_id_without_validating_jwt,
+    login_anonymous,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 

@@ -3377,16 +3377,13 @@ dependencies = [
 name = "topdown-shooter-bevy-client"
 version = "0.1.0"
 dependencies = [
- "base64",
  "bevy",
  "clap",
  "clipboard",
  "hathora-client-sdk",
- "reqwest",
  "serde",
  "serde_json",
  "tungstenite",
- "url",
 ]
 
 [[package]]

@@ -6,6 +6,9 @@ use bevy::render::camera::RenderTarget;
 
 use clap::Parser;
 use clipboard::{ClipboardContext, ClipboardProvider};
+use hathora::{
+    create_nonblocking_subscribed_websocket, decode_user_id_without_validating_jwt, login_anonymous,
+};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -18,50 +21,7 @@ use std::time::Duration;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
-#[derive(Deserialize, Debug, Clone)]
-struct LoginResponse {
-    token: String,
-}
-
-#[derive(Serialize, Debug)]
-struct InitialState {
-    token: String,
-    stateId: String,
-}
-
-#[derive(Deserialize)]
-struct CreateRoomResponse {
-    stateId: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Token {
-    id: String,
-}
-
-#[derive(Debug)]
-struct TokenError;
-
-fn decode_user_id_without_validating_jwt(token: &str) -> Result<String, TokenError> {
-    let segments: Vec<&str> = token.split('.').collect();
-    let _id = segments[1];
-
-    match base64::decode_config(segments[1], base64::URL_SAFE_NO_PAD) {
-        Ok(data) => {
-            let string = String::from_utf8(data).expect("base64 output is valid utf8");
-            let token: Token = serde_json::from_str(&string).expect("token JSON is valid");
-            Ok(token.id)
-        }
-        Err(_) => Err(TokenError),
-    }
-}
-
-fn login(app_id: &str) -> Result<LoginResponse, Box<dyn std::error::Error>> {
-    let login_url = format!("https://coordinator.hathora.dev/{app_id}/login/anonymous");
-    let client = reqwest::blocking::Client::new();
-    let resp: LoginResponse = client.post(login_url).send()?.json()?;
-    Ok(resp)
-}
+mod hathora;
 
 #[derive(Component, Eq, PartialEq, Hash, Clone, Debug)]
 struct UserId(String);
@@ -77,7 +37,7 @@ struct InterpolationBuffer(VecDeque<Transform>);
 
 fn log_in_and_set_up_websocket(provided_room_id: Res<Option<String>>, mut commands: Commands) {
     let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
-    let login_result = login(app_id);
+    let login_result = login_anonymous(app_id);
     let login_response = login_result.expect("Logging in should succeed");
 
     let room_id = provided_room_id.clone().or_else(|| {
@@ -96,41 +56,8 @@ fn log_in_and_set_up_websocket(provided_room_id: Res<Option<String>>, mut comman
     let user_id = decode_user_id_without_validating_jwt(&login_response.token)
         .expect("Decoding JWT should succeed");
     commands.insert_resource(UserId(user_id));
-    let websocket_url = format!("wss://coordinator.hathora.dev/connect/{app_id}");
-    let (mut socket, _response) =
-        connect(Url::parse(&websocket_url).unwrap()).expect("Can't connect to websockets");
-    let initial_state = InitialState {
-        token: login_response.token,
-        stateId: room_id,
-    };
-    let message = serde_json::to_vec(&initial_state).expect("Serialization should work");
-    match socket.write_message(Message::binary(message)) {
-        Ok(_) => {}
-        Err(e) => {
-            error!("Failed to connect to websocket. Error was {}", e);
-        }
-    }
-    match socket.get_mut() {
-        MaybeTlsStream::Plain(stream) => {
-            if let Err(e) = stream.set_nonblocking(true) {
-                warn!(
-                    "Error setting nonblocking. Using blocking websocket. Error was {}",
-                    e
-                );
-            }
-        }
-        MaybeTlsStream::NativeTls(tls_stream) => {
-            if let Err(e) = tls_stream.get_mut().set_nonblocking(true) {
-                warn!(
-                    "Error setting nonblocking. Using blocking websocket. Error was {}",
-                    e
-                );
-            }
-        }
-        _ => {
-            info!("Using unrecognized socket type. Using blocking websocket.");
-        }
-    }
+    let socket = create_nonblocking_subscribed_websocket(app_id, &login_response.token, &room_id)
+        .expect("Creating web socket should work.");
     commands.insert_resource(socket);
 }
 

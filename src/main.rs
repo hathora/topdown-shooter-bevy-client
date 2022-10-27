@@ -89,7 +89,7 @@ fn log_in_and_set_up_websocket(provided_room_id: Res<Option<String>>, mut comman
 
     let room_id = provided_room_id.clone().or_else(|| {
         debug!("No room provided, creating one");
-        match create_room(app_id, &login_response.token) {
+        match create_room(app_id, &login_response.token, vec![]) {
             Ok(create_response) => Some(create_response),
             Err(e) => {
                 error!("Failed to create a room. Error was {}", e);

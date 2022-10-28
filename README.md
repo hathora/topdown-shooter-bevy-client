@@ -11,6 +11,7 @@ Install cargo via [rustup](https://rustup.rs/)
 ```
 cargo run # create a new room
 cargo run -- $ROOM_ID # connect to an existing room
+cargo run -- $ROOM_ID --app-id $APP_ID # connect to an existing room with a custom APP_ID
 ```
 
 ## Overview

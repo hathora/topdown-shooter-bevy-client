@@ -1,6 +1,6 @@
 # Topdown Shooter Bevy Client
 
-An implementation of the multiplayer [Hathora topdown shooter](https://github.com/hathora/topdown-shooter) client using Rust and [Bevy](https://bevyengine.org/).
+An implementation of the multiplayer [Hathora topdown shooter](https://github.com/hathora/topdown-shooter) client using Rust and [Bevy](https://bevyengine.org/). This consumes the [Rust Hathora client](https://github.com/hathora/client-sdk-rs)
 
 Assets from [Kenney](https://kenney.nl/assets/topdown-shooter)
 

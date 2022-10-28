@@ -7,10 +7,7 @@ use bevy::render::camera::RenderTarget;
 use clap::Parser;
 use clipboard::{ClipboardContext, ClipboardProvider};
 
-use hathora_client_sdk::{
-    create_nonblocking_subscribed_websocket, create_room, decode_user_id_without_validating_jwt,
-    login_anonymous,
-};
+use hathora_client_sdk::HathoraClient;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 
@@ -99,12 +96,14 @@ fn log_in_and_set_up_websocket(
         .clone()
         .unwrap_or("e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c".to_string());
 
-    let login_result = login_anonymous(&app_id);
-    let login_response = login_result.expect("Logging in should succeed");
+    let hathora_client = HathoraClient::new(app_id, None);
+
+    let login_result = hathora_client.login_anonymous();
+    let token = login_result.expect("Logging in should succeed");
 
     let room_id = provided_room_id.0.clone().or_else(|| {
         debug!("No room provided, creating one");
-        match create_room(&app_id, &login_response.token, vec![]) {
+        match hathora_client.create(&token, vec![]) {
             Ok(create_response) => Some(create_response),
             Err(e) => {
                 error!("Failed to create a room. Error was {}", e);
@@ -115,10 +114,10 @@ fn log_in_and_set_up_websocket(
     let room_id = room_id.expect("Room ID exists");
     commands.insert_resource(RoomId(room_id.to_owned()));
 
-    let user_id = decode_user_id_without_validating_jwt(&login_response.token)
-        .expect("Decoding JWT should succeed");
+    let user_id = HathoraClient::get_user_from_token(&token).expect("Decoding JWT should succeed");
     commands.insert_resource(UserId(user_id));
-    let socket = create_nonblocking_subscribed_websocket(&app_id, &login_response.token, &room_id)
+    let socket = hathora_client
+        .connect(&token, &room_id)
         .expect("Creating web socket should work.");
     commands.insert_resource(socket);
 }

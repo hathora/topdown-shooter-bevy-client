@@ -41,7 +41,13 @@ struct CurrentPlayer;
 #[derive(Parser)]
 struct Args {
     room_id: Option<String>,
+
+    #[arg(short, long)]
+    app_id: Option<String>,
 }
+
+struct ProvidedRoomId(Option<String>);
+struct ProvidedAppId(Option<String>);
 
 struct RoomId(String);
 
@@ -59,7 +65,8 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_asset::<Map>()
         .init_asset_loader::<MapLoader>()
-        .insert_resource(args.room_id)
+        .insert_resource(ProvidedRoomId(args.room_id))
+        .insert_resource(ProvidedAppId(args.app_id))
         // This is exclusive so we can guarantee that the room is created before
         // we render the room ID
         .add_startup_system(log_in_and_set_up_websocket.exclusive_system())
@@ -82,14 +89,22 @@ fn main() {
         .run();
 }
 
-fn log_in_and_set_up_websocket(provided_room_id: Res<Option<String>>, mut commands: Commands) {
-    let app_id = "e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c";
-    let login_result = login_anonymous(app_id);
+fn log_in_and_set_up_websocket(
+    provided_room_id: Res<ProvidedRoomId>,
+    provided_app_id: Res<ProvidedAppId>,
+    mut commands: Commands,
+) {
+    let app_id = provided_app_id
+        .0
+        .clone()
+        .unwrap_or("e2d8571eb89af72f2abbe909def5f19bc4dad0cd475cce5f5b6e9018017d1f1c".to_string());
+
+    let login_result = login_anonymous(&app_id);
     let login_response = login_result.expect("Logging in should succeed");
 
-    let room_id = provided_room_id.clone().or_else(|| {
+    let room_id = provided_room_id.0.clone().or_else(|| {
         debug!("No room provided, creating one");
-        match create_room(app_id, &login_response.token, vec![]) {
+        match create_room(&app_id, &login_response.token, vec![]) {
             Ok(create_response) => Some(create_response),
             Err(e) => {
                 error!("Failed to create a room. Error was {}", e);
@@ -103,7 +118,7 @@ fn log_in_and_set_up_websocket(provided_room_id: Res<Option<String>>, mut comman
     let user_id = decode_user_id_without_validating_jwt(&login_response.token)
         .expect("Decoding JWT should succeed");
     commands.insert_resource(UserId(user_id));
-    let socket = create_nonblocking_subscribed_websocket(app_id, &login_response.token, &room_id)
+    let socket = create_nonblocking_subscribed_websocket(&app_id, &login_response.token, &room_id)
         .expect("Creating web socket should work.");
     commands.insert_resource(socket);
 }

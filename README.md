@@ -4,8 +4,7 @@ An implementation of a [Hathora topdown shooter](https://github.com/hathora/topd
 
 Assets from [Kenney](https://kenney.nl/assets/topdown-shooter)
 
-https://user-images.githubusercontent.com/425835/198693059-952551d2-023d-4646-b2d1-2f3392efcd1e.mov
-
+https://user-images.githubusercontent.com/425835/198699248-04438a32-87b9-436d-a088-c5352225a077.mov
 
 ## Running Locally
 

@@ -4,20 +4,14 @@ use std::{
     time::Duration,
 };
 
-use bevy::{
-    asset::{AssetLoader, LoadedAsset},
-    input::mouse::MouseMotion,
-    prelude::*,
-    reflect::TypeUuid,
-    render::camera::RenderTarget,
-};
+use bevy::{input::mouse::MouseMotion, prelude::*, render::camera::RenderTarget};
 use clipboard::{ClipboardContext, ClipboardProvider};
 use hathora_client_sdk::HathoraClient;
-use serde::{Deserialize, Serialize};
 use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
 
 use crate::{
     components::{BulletId, CurrentPlayer, InterpolationBuffer, MainCamera, UserId},
+    serialization::{AngleInput, ClickInput, MapAsset, MoveInput, UpdateMessage},
     ProvidedAppId, ProvidedRoomId,
 };
 
@@ -148,46 +142,6 @@ pub struct LoadedMap(Handle<MapAsset>, bool);
 pub fn load_map(asset_server: Res<AssetServer>, mut commands: Commands) {
     let map_loading = asset_server.load("data/map.json");
     commands.insert_resource(LoadedMap(map_loading, false));
-}
-
-#[derive(Default)]
-pub struct MapLoader;
-
-#[derive(Deserialize, Debug)]
-struct Wall {
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-}
-
-#[derive(Deserialize, TypeUuid, Debug)]
-#[uuid = "39cadc56-aa9c-4543-8640-a018b74b5052"]
-pub struct MapAsset {
-    tileSize: i32,
-    top: i32,
-    left: i32,
-    bottom: i32,
-    right: i32,
-    walls: Vec<Wall>,
-}
-
-impl AssetLoader for MapLoader {
-    fn load<'a>(
-        &'a self,
-        bytes: &'a [u8],
-        load_context: &'a mut bevy::asset::LoadContext,
-    ) -> bevy::utils::BoxedFuture<'a, Result<(), bevy::asset::Error>> {
-        Box::pin(async move {
-            let map = serde_json::from_slice::<MapAsset>(bytes)?;
-            load_context.set_default_asset(LoadedAsset::new(map));
-            Ok(())
-        })
-    }
-
-    fn extensions(&self) -> &[&str] {
-        &["json"]
-    }
 }
 
 pub fn draw_map(
@@ -422,39 +376,6 @@ pub fn read_from_server(
     }
 }
 
-#[derive(Deserialize, Debug)]
-struct Player {
-    id: String,
-    position: Position,
-    aimAngle: f32,
-}
-
-#[derive(Deserialize, Debug)]
-struct Position {
-    x: f32,
-    y: f32,
-}
-
-#[derive(Deserialize, Debug)]
-struct Bullet {
-    id: i32,
-    position: Position,
-}
-
-#[derive(Deserialize, Debug)]
-struct GameState {
-    players: Vec<Player>,
-    bullets: Vec<Bullet>,
-}
-
-#[derive(Deserialize, Debug)]
-struct UpdateMessage {
-    #[serde(rename = "type")]
-    serialized_type: u64,
-    ts: u64,
-    state: GameState,
-}
-
 // determines how quickly our interpolation converges
 const LAMBDA: f32 = 1.;
 
@@ -582,26 +503,6 @@ pub fn write_inputs(
             }
         }
     }
-}
-
-#[derive(Serialize)]
-struct MoveInput {
-    #[serde(rename = "type")]
-    serialized_type: u64,
-    direction: u64,
-}
-
-#[derive(Serialize)]
-struct AngleInput {
-    #[serde(rename = "type")]
-    serialized_type: u64,
-    angle: f32,
-}
-
-#[derive(Serialize)]
-struct ClickInput {
-    #[serde(rename = "type")]
-    serialized_type: u64,
 }
 
 pub fn update_camera(

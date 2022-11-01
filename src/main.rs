@@ -2,9 +2,11 @@ use bevy::prelude::*;
 
 use clap::Parser;
 
+use serialization::{MapAsset, MapLoader};
 use systems::*;
 
 mod components;
+mod serialization;
 mod systems;
 
 #[derive(Parser)]

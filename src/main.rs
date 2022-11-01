@@ -7,6 +7,7 @@ use bevy::render::camera::RenderTarget;
 use clap::Parser;
 use clipboard::{ClipboardContext, ClipboardProvider};
 
+use components::*;
 use hathora_client_sdk::HathoraClient;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
@@ -20,20 +21,9 @@ use bevy::asset::{AssetLoader, LoadedAsset};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
 
-#[derive(Component, Eq, PartialEq, Hash, Clone, Debug)]
-struct UserId(String);
+mod components;
 
-#[derive(Component)]
-struct BulletId(i32);
 
-#[derive(Component)]
-struct MainCamera;
-
-#[derive(Component)]
-struct InterpolationBuffer(VecDeque<Transform>);
-
-#[derive(Component)]
-struct CurrentPlayer;
 
 #[derive(Parser)]
 struct Args {

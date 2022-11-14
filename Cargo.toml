@@ -9,7 +9,7 @@ edition = "2021"
 bevy = "0.8.1"
 serde_json = "1.0.86"
 serde = { version = "1.0.145", features = ["derive"] }
-tungstenite = { version = "0.17.3", features = ["native-tls"] }
 clipboard = "0.5.0"
 clap = { version = "4.0.17", features = ["derive"] }
-hathora-client-sdk = "0.3.0"
+# hathora-client-sdk = "0.4.0"
+hathora-client-sdk = { git = "https://github.com/hathora/buildkits", branch = "szu/add-send" }

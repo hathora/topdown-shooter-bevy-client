@@ -6,8 +6,7 @@ use std::{
 
 use bevy::{input::mouse::MouseMotion, prelude::*, render::camera::RenderTarget};
 use clipboard::{ClipboardContext, ClipboardProvider};
-use hathora_client_sdk::HathoraClient;
-use tungstenite::{stream::MaybeTlsStream, Message, WebSocket};
+use hathora_client_sdk::{HathoraClient, HathoraTransport};
 
 use crate::{
     components::{BulletId, CurrentPlayer, InterpolationBuffer, MainCamera, UserId},
@@ -17,7 +16,7 @@ use crate::{
 
 pub struct RoomId(String);
 
-pub fn log_in_and_set_up_websocket(
+pub fn log_in_and_set_up_transport(
     provided_room_id: Res<ProvidedRoomId>,
     provided_app_id: Res<ProvidedAppId>,
     mut commands: Commands,
@@ -47,10 +46,14 @@ pub fn log_in_and_set_up_websocket(
 
     let user_id = HathoraClient::get_user_from_token(&token).expect("Decoding JWT should succeed");
     commands.insert_resource(UserId(user_id));
-    let socket = hathora_client
-        .connect(&token, &room_id)
+    let transport = hathora_client
+        .connect(
+            &token,
+            &room_id,
+            hathora_client_sdk::HathoraTransportType::WebSocket,
+        )
         .expect("Creating web socket should work.");
-    commands.insert_resource(socket);
+    commands.insert_resource(transport);
 }
 
 pub fn setup_camera(mut commands: Commands) {
@@ -226,7 +229,7 @@ pub fn copy_room_id_button(
 }
 
 pub fn read_from_server(
-    mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
+    mut connection: ResMut<Box<dyn HathoraTransport>>,
     client_user_id: Res<UserId>,
     mut player_query: Query<
         (Entity, &UserId, &mut InterpolationBuffer),
@@ -240,133 +243,109 @@ pub fn read_from_server(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
-    match socket.read_message() {
-        Ok(msg) => {
+    match connection.read_message() {
+        Ok(data) => {
             debug!("got some data!");
+            if !data.is_empty() {
+                let update: UpdateMessage =
+                    serde_json::from_slice(&data).expect("Deserialize should work");
 
-            match msg {
-                Message::Text(_) => {
-                    info!("Got text");
+                let mut spawned_players: HashSet<String> = HashSet::new();
+
+                for (entity, user_id, mut interpolation_buffer) in &mut player_query {
+                    let mut found = false;
+                    spawned_players.insert(user_id.0.clone());
+                    for player_update in update.state.players.iter() {
+                        if player_update.id == user_id.0 {
+                            debug!("Updating {:?}", &player_update);
+                            found = true;
+
+                            interpolation_buffer.0.push_back(Transform {
+                                translation: Vec3::new(
+                                    player_update.position.x,
+                                    -player_update.position.y,
+                                    0.,
+                                ),
+                                rotation: Quat::from_rotation_z(-player_update.aimAngle),
+                                ..default()
+                            });
+                        }
+                    }
+
+                    if !found {
+                        debug!("Despawning {:?}", user_id);
+                        commands.entity(entity).despawn();
+                    }
                 }
-                Message::Binary(data) => {
-                    debug!("Got binary");
 
-                    if !data.is_empty() {
-                        let update: UpdateMessage =
-                            serde_json::from_slice(&data).expect("Deserialize should work");
+                for player_update in update.state.players.iter() {
+                    if !spawned_players.contains(&player_update.id) {
+                        debug!("Spawning {}", &player_update.id);
+                        let mut entity = commands.spawn();
+                        entity
+                            .insert(UserId(player_update.id.clone()))
+                            .insert_bundle(SpriteBundle {
+                                texture: asset_server.load("sprites/player.png"),
+                                transform: Transform {
+                                    translation: Vec3::new(
+                                        player_update.position.x,
+                                        -player_update.position.y,
+                                        0.,
+                                    ),
+                                    rotation: Quat::from_rotation_z(-player_update.aimAngle),
+                                    ..default()
+                                },
+                                ..default()
+                            })
+                            .insert(InterpolationBuffer(VecDeque::new()));
 
-                        let mut spawned_players: HashSet<String> = HashSet::new();
-
-                        for (entity, user_id, mut interpolation_buffer) in &mut player_query {
-                            let mut found = false;
-                            spawned_players.insert(user_id.0.clone());
-                            for player_update in update.state.players.iter() {
-                                if player_update.id == user_id.0 {
-                                    debug!("Updating {:?}", &player_update);
-                                    found = true;
-
-                                    interpolation_buffer.0.push_back(Transform {
-                                        translation: Vec3::new(
-                                            player_update.position.x,
-                                            -player_update.position.y,
-                                            0.,
-                                        ),
-                                        rotation: Quat::from_rotation_z(-player_update.aimAngle),
-                                        ..default()
-                                    });
-                                }
-                            }
-
-                            if !found {
-                                debug!("Despawning {:?}", user_id);
-                                commands.entity(entity).despawn();
-                            }
-                        }
-
-                        for player_update in update.state.players.iter() {
-                            if !spawned_players.contains(&player_update.id) {
-                                debug!("Spawning {}", &player_update.id);
-                                let mut entity = commands.spawn();
-                                entity
-                                    .insert(UserId(player_update.id.clone()))
-                                    .insert_bundle(SpriteBundle {
-                                        texture: asset_server.load("sprites/player.png"),
-                                        transform: Transform {
-                                            translation: Vec3::new(
-                                                player_update.position.x,
-                                                -player_update.position.y,
-                                                0.,
-                                            ),
-                                            rotation: Quat::from_rotation_z(
-                                                -player_update.aimAngle,
-                                            ),
-                                            ..default()
-                                        },
-                                        ..default()
-                                    })
-                                    .insert(InterpolationBuffer(VecDeque::new()));
-
-                                if player_update.id == client_user_id.0 {
-                                    entity.insert(CurrentPlayer);
-                                }
-                            }
-                        }
-
-                        let mut spawned_bullets: HashSet<i32> = HashSet::new();
-
-                        for (bullet_entity, bullet, mut bullet_transform) in &mut bullet_query {
-                            let mut found = false;
-                            spawned_bullets.insert(bullet.0);
-
-                            for bullet_update in update.state.bullets.iter() {
-                                if bullet_update.id == bullet.0 {
-                                    debug!("Updating {}", bullet.0);
-                                    found = true;
-                                    bullet_transform.translation.x = bullet_update.position.x;
-                                    bullet_transform.translation.y = -bullet_update.position.y;
-                                    debug!("Bullet transform is {}", bullet_transform.translation);
-                                }
-                            }
-
-                            if !found {
-                                debug!("Despawning bullet {}", bullet.0);
-                                commands.entity(bullet_entity).despawn();
-                            }
-                        }
-
-                        for bullet_update in update.state.bullets.iter() {
-                            if !spawned_bullets.contains(&bullet_update.id) {
-                                debug!("Spawning bullet {}", bullet_update.id);
-                                commands
-                                    .spawn()
-                                    .insert(BulletId(bullet_update.id))
-                                    .insert_bundle(SpriteBundle {
-                                        texture: asset_server.load("sprites/bullet.png"),
-                                        transform: Transform {
-                                            translation: Vec3::new(
-                                                bullet_update.position.x,
-                                                -bullet_update.position.y,
-                                                0.,
-                                            ),
-                                            ..default()
-                                        },
-                                        ..default()
-                                    });
-                            }
+                        if player_update.id == client_user_id.0 {
+                            entity.insert(CurrentPlayer);
                         }
                     }
                 }
-                Message::Ping(_) => {
-                    info!("Got ping");
+
+                let mut spawned_bullets: HashSet<i32> = HashSet::new();
+
+                for (bullet_entity, bullet, mut bullet_transform) in &mut bullet_query {
+                    let mut found = false;
+                    spawned_bullets.insert(bullet.0);
+
+                    for bullet_update in update.state.bullets.iter() {
+                        if bullet_update.id == bullet.0 {
+                            debug!("Updating {}", bullet.0);
+                            found = true;
+                            bullet_transform.translation.x = bullet_update.position.x;
+                            bullet_transform.translation.y = -bullet_update.position.y;
+                            debug!("Bullet transform is {}", bullet_transform.translation);
+                        }
+                    }
+
+                    if !found {
+                        debug!("Despawning bullet {}", bullet.0);
+                        commands.entity(bullet_entity).despawn();
+                    }
                 }
-                Message::Pong(_) => {
-                    info!("Got pong");
-                }
-                Message::Close(_) => {
-                    info!("Got close");
-                }
-                Message::Frame(_) => {
-                    info!("Got frame");
+
+                for bullet_update in update.state.bullets.iter() {
+                    if !spawned_bullets.contains(&bullet_update.id) {
+                        debug!("Spawning bullet {}", bullet_update.id);
+                        commands
+                            .spawn()
+                            .insert(BulletId(bullet_update.id))
+                            .insert_bundle(SpriteBundle {
+                                texture: asset_server.load("sprites/bullet.png"),
+                                transform: Transform {
+                                    translation: Vec3::new(
+                                        bullet_update.position.x,
+                                        -bullet_update.position.y,
+                                        0.,
+                                    ),
+                                    ..default()
+                                },
+                                ..default()
+                            });
+                    }
                 }
             }
         }
@@ -417,7 +396,7 @@ pub fn write_inputs(
     mouse_motion_events: EventReader<MouseMotion>,
     mouse_button_input: Res<Input<MouseButton>>,
 
-    mut socket: ResMut<WebSocket<MaybeTlsStream<TcpStream>>>,
+    mut transport: ResMut<Box<dyn HathoraTransport>>,
 ) {
     debug!("Processing keyboard input");
     if input.any_just_released([KeyCode::W, KeyCode::A, KeyCode::S, KeyCode::D])
@@ -451,8 +430,8 @@ pub fn write_inputs(
         };
 
         let message = serde_json::to_vec(&input).expect("Serialization should work");
-        if let Err(e) = socket.write_message(Message::Binary(message)) {
-            warn!("Socket failed to write, error was {}", e);
+        if let Err(e) = transport.write_message(message) {
+            warn!("Transport failed to write, error was {}", e);
         }
     }
 
@@ -460,8 +439,8 @@ pub fn write_inputs(
         debug!("Mouse clicked.");
         let mouse_input = ClickInput { serialized_type: 2 };
         let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
-        if let Err(e) = socket.write_message(Message::Binary(message)) {
-            warn!("Socket failed to write, error was {}", e);
+        if let Err(e) = transport.write_message(message) {
+            warn!("Transport failed to write, error was {}", e);
         }
     }
 
@@ -497,8 +476,8 @@ pub fn write_inputs(
                 };
 
                 let message = serde_json::to_vec(&mouse_input).expect("Serialization should work");
-                if let Err(e) = socket.write_message(Message::Binary(message)) {
-                    warn!("Socket failed to write, error was {}", e);
+                if let Err(e) = transport.write_message(message) {
+                    warn!("Transport failed to write, error was {}", e);
                 }
             }
         }

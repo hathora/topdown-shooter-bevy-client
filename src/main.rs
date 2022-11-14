@@ -38,7 +38,7 @@ fn main() {
         .insert_resource(ProvidedAppId(args.app_id))
         // This is exclusive so we can guarantee that the room is created before
         // we render the room ID
-        .add_startup_system(log_in_and_set_up_websocket.exclusive_system())
+        .add_startup_system(log_in_and_set_up_transport.exclusive_system())
         .add_startup_system(setup_camera)
         .add_startup_system(display_room_id)
         .add_startup_system(load_map)

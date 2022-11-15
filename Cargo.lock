@@ -1834,8 +1834,9 @@ dependencies = [
 
 [[package]]
 name = "hathora-client-sdk"
-version = "0.4.0"
-source = "git+https://github.com/hathora/buildkits?branch=szu/add-send#3145d85c4167e1c0ada0ca55a2c476a474d06fc8"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d742c84d8e30a52c7b754f3cb52dadfeb3956782c4ef72a56e49047e3ce841a"
 dependencies = [
  "anyhow",
  "base64",
@@ -3582,9 +3583,9 @@ checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "uuid"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "feb41e78f93363bb2df8b0e86a2ca30eed7806ea16ea0c790d757cf93f79be83"
+checksum = "422ee0de9031b5b948b97a8fc04e3aa35230001a722ddd27943e0be31564ce4c"
 dependencies = [
  "getrandom",
  "serde",
